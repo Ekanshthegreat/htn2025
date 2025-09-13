@@ -7,6 +7,7 @@
     const explainBtn = document.getElementById('explainBtn');
     const codeInput = document.getElementById('codeInput');
     const statusText = document.getElementById('statusText');
+    const profileSelect = document.getElementById('profileSelect');
 
     // Event listeners
     clearBtn.addEventListener('click', () => {
@@ -32,6 +33,16 @@
         }
     });
 
+    profileSelect.addEventListener('change', (e) => {
+        const profileId = e.target.value;
+        if (profileId) {
+            vscode.postMessage({ 
+                type: 'switchProfile', 
+                profileId: profileId 
+            });
+        }
+    });
+
     // Message handling
     window.addEventListener('message', event => {
         const message = event.data;
@@ -42,6 +53,9 @@
                 break;
             case 'statusUpdate':
                 updateStatus(message.status);
+                break;
+            case 'updateProfiles':
+                updateProfileSelector(message.profiles, message.activeProfileId);
                 break;
         }
     });
@@ -146,33 +160,25 @@
         
         // Re-add welcome message if no messages
         if (!messagesContainer.querySelector('.welcome-message')) {
-            addWelcomeMessage();
+            messagesContainer.innerHTML = `
+                <div class="welcome-message">
+                    <h3>👋 Welcome to AI Mentor!</h3>
+                    <p>I'm here to help you code better. I'll watch your code changes and provide real-time guidance.</p>
+                    <ul>
+                        <li>🔍 <strong>Real-time Analysis:</strong> I analyze your code as you type</li>
+                        <li>🐛 <strong>Proactive Debugging:</strong> I spot issues before they become problems</li>
+                        <li>📚 <strong>Code Explanation:</strong> I explain what your code does in plain English</li>
+                        <li>🎯 <strong>Best Practices:</strong> I suggest improvements and optimizations</li>
+                    </ul>
+                    <p>Start coding and I'll begin mentoring you!</p>
+                </div>
+            `;
         }
-        
-        updateStatus('History cleared');
-    }
-
-    function addWelcomeMessage() {
-        const welcomeDiv = document.createElement('div');
-        welcomeDiv.className = 'welcome-message';
-        welcomeDiv.innerHTML = `
-            <h3>👋 Welcome to AI Mentor!</h3>
-            <p>I'm here to help you code better. I'll watch your code changes and provide real-time guidance.</p>
-            <ul>
-                <li>🔍 <strong>Real-time Analysis:</strong> I analyze your code as you type</li>
-                <li>🐛 <strong>Proactive Debugging:</strong> I spot issues before they become problems</li>
-                <li>📚 <strong>Code Explanation:</strong> I explain what your code does in plain English</li>
-                <li>🎯 <strong>Best Practices:</strong> I suggest improvements and optimizations</li>
-            </ul>
-            <p>Start coding and I'll begin mentoring you!</p>
-        `;
-        messagesContainer.appendChild(welcomeDiv);
     }
 
     function updateStatus(status) {
         statusText.textContent = status;
         
-        // Update status indicator color based on status
         const indicator = document.querySelector('.status-indicator');
         if (status.includes('error') || status.includes('Error')) {
             indicator.style.backgroundColor = 'var(--vscode-terminal-ansiRed)';
@@ -183,6 +189,20 @@
         } else {
             indicator.style.backgroundColor = 'var(--vscode-terminal-ansiGreen)';
         }
+    }
+
+    function updateProfileSelector(profiles, activeProfileId) {
+        profileSelect.innerHTML = '';
+        
+        profiles.forEach(profile => {
+            const option = document.createElement('option');
+            option.value = profile.id;
+            option.textContent = `${profile.name} (${profile.role})`;
+            if (profile.id === activeProfileId) {
+                option.selected = true;
+            }
+            profileSelect.appendChild(option);
+        });
     }
 
     function escapeHtml(text) {

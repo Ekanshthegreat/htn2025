@@ -30,9 +30,11 @@ exports.LLMService = void 0;
 const vscode = __importStar(require("vscode"));
 const openai_1 = __importDefault(require("openai"));
 class LLMService {
-    constructor() {
+    constructor(profileManager) {
         this.openai = null;
         this.conversationHistory = [];
+        this.profileManager = null;
+        this.profileManager = profileManager || null;
         this.initializeProvider();
     }
     initializeProvider() {
@@ -61,7 +63,7 @@ class LLMService {
                 messages: [
                     {
                         role: 'system',
-                        content: this.getSystemPrompt()
+                        content: this.getSystemPrompt(message.type)
                     },
                     ...this.conversationHistory,
                     {
@@ -89,7 +91,37 @@ class LLMService {
             return null;
         }
     }
-    getSystemPrompt() {
+    getSystemPrompt(messageType) {
+        // Get profile-specific prompt if profile manager is available
+        if (this.profileManager) {
+            const activeProfile = this.profileManager.getActiveProfile();
+            let basePrompt = activeProfile.prompts.systemPrompt;
+            // Use specific prompt based on message type
+            switch (messageType) {
+                case 'start_debugging':
+                    basePrompt = activeProfile.prompts.debuggingPrompt;
+                    break;
+                case 'code_changed':
+                    basePrompt = activeProfile.prompts.reviewPrompt;
+                    break;
+                case 'trace_execution':
+                    basePrompt = activeProfile.prompts.explanationPrompt;
+                    break;
+                default:
+                    basePrompt = activeProfile.prompts.systemPrompt;
+            }
+            return `${basePrompt}
+
+Response format should be JSON with:
+{
+  "message": "Main explanation or narration",
+  "suggestions": ["Optional array of suggestions"],
+  "warnings": ["Optional array of warnings"],
+  "codeSnippets": [{"language": "js", "code": "example"}],
+  "type": "narration|warning|suggestion|explanation"
+}`;
+        }
+        // Fallback to default prompt if no profile manager
         return `You are an AI programming mentor and pair programming assistant. Your role is to:
 
 1. Watch code changes in real-time and provide natural language explanations

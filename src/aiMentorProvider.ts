@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { CodeWatcher } from './codeWatcher';
 import { LLMService, MentorResponse } from './llmService';
+import { ProfileManager } from './profileManager';
 
 export class AIMentorProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'aiMentorPanel';
@@ -10,7 +11,8 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
     constructor(
         private readonly _extensionUri: vscode.Uri,
         private codeWatcher: CodeWatcher,
-        private llmService: LLMService
+        private llmService: LLMService,
+        private profileManager?: ProfileManager
     ) {
         // Listen for mentor responses
         this.setupMessageListener();
@@ -38,6 +40,9 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                 case 'requestExplanation':
                     this.requestExplanation(data.code);
                     break;
+                case 'switchProfile':
+                    this.switchProfile(data.profileId);
+                    break;
             }
         });
     }
@@ -58,6 +63,18 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                 type: 'updateMessages',
                 messages: this.messages
             });
+
+            // Also send profile data if available
+            if (this.profileManager) {
+                const profiles = this.profileManager.getAllProfiles();
+                const activeProfile = this.profileManager.getActiveProfile();
+                
+                this._view.webview.postMessage({
+                    type: 'updateProfiles',
+                    profiles: profiles,
+                    activeProfileId: activeProfile.id
+                });
+            }
         }
     }
 
@@ -82,6 +99,17 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
         }
     }
 
+    private async switchProfile(profileId: string) {
+        if (this.profileManager) {
+            const success = await this.profileManager.setActiveProfile(profileId);
+            if (success) {
+                const profile = this.profileManager.getProfile(profileId);
+                this.updateWebview();
+                vscode.window.showInformationMessage(`Switched to mentor profile: ${profile?.name}`);
+            }
+        }
+    }
+
     private _getHtmlForWebview(webview: vscode.Webview) {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.css'));
@@ -98,7 +126,12 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                 <div class="container">
                     <div class="header">
                         <h2>🤖 AI Mentor</h2>
-                        <button id="clearBtn" class="btn btn-secondary">Clear History</button>
+                        <div class="header-controls">
+                            <select id="profileSelect" class="profile-selector">
+                                <!-- Profiles will be populated by JavaScript -->
+                            </select>
+                            <button id="clearBtn" class="btn btn-secondary">Clear History</button>
+                        </div>
                     </div>
                     
                     <div id="status" class="status">

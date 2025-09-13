@@ -26,10 +26,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AIMentorProvider = void 0;
 const vscode = __importStar(require("vscode"));
 class AIMentorProvider {
-    constructor(_extensionUri, codeWatcher, llmService) {
+    constructor(_extensionUri, codeWatcher, llmService, profileManager) {
         this._extensionUri = _extensionUri;
         this.codeWatcher = codeWatcher;
         this.llmService = llmService;
+        this.profileManager = profileManager;
         this.messages = [];
         // Listen for mentor responses
         this.setupMessageListener();
@@ -49,6 +50,9 @@ class AIMentorProvider {
                 case 'requestExplanation':
                     this.requestExplanation(data.code);
                     break;
+                case 'switchProfile':
+                    this.switchProfile(data.profileId);
+                    break;
             }
         });
     }
@@ -66,6 +70,16 @@ class AIMentorProvider {
                 type: 'updateMessages',
                 messages: this.messages
             });
+            // Also send profile data if available
+            if (this.profileManager) {
+                const profiles = this.profileManager.getAllProfiles();
+                const activeProfile = this.profileManager.getActiveProfile();
+                this._view.webview.postMessage({
+                    type: 'updateProfiles',
+                    profiles: profiles,
+                    activeProfileId: activeProfile.id
+                });
+            }
         }
     }
     clearHistory() {
@@ -86,6 +100,16 @@ class AIMentorProvider {
             this.addMessage(response);
         }
     }
+    async switchProfile(profileId) {
+        if (this.profileManager) {
+            const success = await this.profileManager.setActiveProfile(profileId);
+            if (success) {
+                const profile = this.profileManager.getProfile(profileId);
+                this.updateWebview();
+                vscode.window.showInformationMessage(`Switched to mentor profile: ${profile?.name}`);
+            }
+        }
+    }
     _getHtmlForWebview(webview) {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.css'));
@@ -101,7 +125,12 @@ class AIMentorProvider {
                 <div class="container">
                     <div class="header">
                         <h2>🤖 AI Mentor</h2>
-                        <button id="clearBtn" class="btn btn-secondary">Clear History</button>
+                        <div class="header-controls">
+                            <select id="profileSelect" class="profile-selector">
+                                <!-- Profiles will be populated by JavaScript -->
+                            </select>
+                            <button id="clearBtn" class="btn btn-secondary">Clear History</button>
+                        </div>
                     </div>
                     
                     <div id="status" class="status">

@@ -82,13 +82,28 @@
         "category": "AI Mentor Engineering"
       },
       {
-        "command": "aiMentor.showEngineeringReport",
-        "title": "📊 Show Engineering Report",
-        "category": "AI Mentor Engineering"
+        "command": "aiMentor.selectProfile",
+        "title": "👤 Select Mentor Profile",
+        "category": "AI Mentor Profiles"
+      },
+      {
+        "command": "aiMentor.createProfile",
+        "title": "➕ Create New Profile",
+        "category": "AI Mentor Profiles"
+      },
+      {
+        "command": "aiMentor.importGithubProfile",
+        "title": "📥 Import from GitHub",
+        "category": "AI Mentor Profiles"
+      },
+      {
+        "command": "aiMentor.manageProfiles",
+        "title": "⚙️ Manage Profiles",
+        "category": "AI Mentor Profiles"
       }
     ],
     "views": {
-      "explorer": [
+      "aiMentor": [
         {
           "id": "aiMentorPanel",
           "name": "AI Mentor",
@@ -111,7 +126,11 @@
         "aiMentor.llmProvider": {
           "type": "string",
           "default": "gemini",
-          "enum": ["gemini", "openai", "anthropic"],
+          "enum": [
+            "gemini",
+            "openai",
+            "anthropic"
+          ],
           "description": "LLM provider to use for AI mentor"
         },
         "aiMentor.apiKey": {
@@ -150,8 +169,20 @@
         "aiMentor.voiceProvider": {
           "type": "string",
           "default": "vapi",
-          "enum": ["vapi", "browser"],
+          "enum": [
+            "vapi",
+            "browser"
+          ],
           "description": "Voice provider to use (VAPI for advanced features, browser for basic)"
+        },
+        "aiMentor.activeProfile": {
+          "type": "string",
+          "default": "default",
+          "description": "Currently active mentor profile ID"
+        },
+        "aiMentor.githubToken": {
+          "type": "string",
+          "description": "GitHub personal access token for profile analysis"
         }
       }
     }
@@ -162,8 +193,8 @@
     "watch": "tsc -watch -p ./"
   },
   "devDependencies": {
-    "@types/vscode": "^1.74.0",
     "@types/node": "16.x",
+    "@types/vscode": "^1.74.0",
     "@types/ws": "^8.5.0",
     "typescript": "^4.9.4"
   },
@@ -174,6 +205,7 @@
     "@google/generative-ai": "^0.2.1",
     "@vapi-ai/web": "^1.0.0",
     "diff": "^5.1.0",
+    "openai": "^5.20.2",
     "ws": "^8.14.0"
   }
 }
