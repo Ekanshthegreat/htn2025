@@ -189,23 +189,24 @@ export class VoiceService {
         try {
             this.currentCall = await this.vapi.start({
                 model: {
-                    provider: 'openai',
-                    model: 'gpt-4',
+                    provider: 'google',
+                    model: 'gemini-pro',
                     messages: [
                         {
                             role: 'system',
-                            content: `You are an expert AI programming mentor with voice capabilities. 
+                            content: `You are an expert AI programming mentor with voice capabilities powered by Google Gemini. 
                             You can see the user's code and help them debug interactively through voice conversation.
                             
                             Key capabilities:
-                            - Analyze code structure and identify bugs
-                            - Explain complex concepts in simple terms
-                            - Guide step-by-step debugging sessions
-                            - Suggest best practices and optimizations
+                            - Analyze code structure and identify bugs using Gemini's advanced reasoning
+                            - Explain complex concepts in simple terms with Gemini's natural language understanding
+                            - Guide step-by-step debugging sessions with contextual awareness
+                            - Suggest best practices and optimizations based on modern development patterns
                             - Respond to voice commands like "explain this function" or "find the bug"
                             
                             Be conversational, encouraging, and educational. Ask clarifying questions when needed.
-                            Keep responses concise but thorough for voice delivery.`
+                            Keep responses concise but thorough for voice delivery.
+                            Leverage Gemini's multimodal capabilities for comprehensive code analysis.`
                         }
                     ]
                 },
