@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { LLMService } from './llmService';
 import { VoiceService } from './voiceService';
-import { MentorPersonalityService } from './mentorPersonality';
+import { ProfileManager } from './profileManager';
 import { GenesysService, UserBehaviorAnalysis } from './genesysService';
 
 export interface CodeSuggestion {
@@ -19,7 +19,7 @@ export class RealtimeAnalyzer {
     private decorationType: vscode.TextEditorDecorationType;
 
     private isEnabled = true;
-    private personality: MentorPersonalityService;
+    private profileManager: ProfileManager;
     private genesysService: GenesysService;
     private userActions: Array<{ action: string; timestamp: Date; context?: any }> = [];
     private sessionStart: Date = new Date();
@@ -29,9 +29,9 @@ export class RealtimeAnalyzer {
     constructor(
         private llmService: LLMService,
         private voiceService: VoiceService,
-        private profileManager?: any
+        profileManager: ProfileManager
     ) {
-        this.personality = new MentorPersonalityService();
+        this.profileManager = profileManager;
         this.genesysService = new GenesysService();
         this.diagnosticCollection = vscode.languages.createDiagnosticCollection('aiMentor');
         
@@ -46,15 +46,20 @@ export class RealtimeAnalyzer {
 
         this.setupEventListeners();
         
-        // Show startup message with personality
-        vscode.window.showInformationMessage(this.personality.getGreeting());
+        // Show initial greeting from active mentor if available
+        const activeProfile = this.profileManager.getActiveProfile();
+        if (activeProfile) {
+            vscode.window.showInformationMessage(`🤖 ${activeProfile.name}: Ready to help you code better!`);
+        } else {
+            vscode.window.showInformationMessage('🤖 AI Mentor: Please create a GitHub-based mentor profile to get started!');
+        }
         
         // Debug: Log that analyzer is initialized
         console.log('🔧 AI Mentor: Real-time analyzer initialized and ready!');
         
-        // Immediately analyze current document if one is open
+        // Immediately analyze current document if one is open and we have a profile
         const activeEditor = vscode.window.activeTextEditor;
-        if (activeEditor) {
+        if (activeEditor && activeProfile) {
             setTimeout(() => {
                 this.runImmediateTest(activeEditor);
             }, 1000);
@@ -109,7 +114,7 @@ export class RealtimeAnalyzer {
         this.detectSecurityVulnerabilities(lines, diagnostics, document);
         this.checkBestPractices(lines, diagnostics, document);
         
-        // Apply mentor personality to all diagnostics
+        // Apply active mentor personality to all diagnostics
         this.applyMentorPersonality(diagnostics);
         
         this.diagnosticCollection.set(document.uri, diagnostics);
@@ -154,8 +159,9 @@ export class RealtimeAnalyzer {
             const quickHint = await this.getQuickHint(lineText, editor.document.languageId);
             if (quickHint) {
                 this.showQuickHint(editor, position.line, quickHint);
-                // Show status bar message to indicate AI Mentor is working
-                vscode.window.setStatusBarMessage('🤖 AI Mentor analyzing...', 2000);
+                // Show status bar message with active mentor name
+                const activeProfile = this.profileManager.getActiveProfile();
+                vscode.window.setStatusBarMessage(`🤖 ${activeProfile.name} analyzing...`, 2000);
             }
         } catch (error) {
             console.error('Quick hint analysis failed:', error);
@@ -456,43 +462,31 @@ export class RealtimeAnalyzer {
                     this.getSeverityBasedOnEmpathy(behaviorAnalysis)
                 );
                 // Use mentor profile name if available
-                const mentorName = this.profileManager?.getActiveProfile()?.name || this.personality.getName();
+                const activeProfile = this.profileManager?.getActiveProfile();
+                const mentorName = activeProfile?.name || 'AI Mentor';
                 diagnostic.source = `${mentorName}`;
                 diagnostics.push(diagnostic);
             });
             
-            // Proactive comments for code patterns with empathy
-            const proactiveComment = this.personality.getProactiveComment(line);
-            if (proactiveComment) {
-                const range = new vscode.Range(index, 0, index, line.length);
-                const empathyAdjustedComment = this.adjustMessageForEmpathy(proactiveComment, behaviorAnalysis);
-                
-                const diagnostic = new vscode.Diagnostic(
-                    range,
-                    empathyAdjustedComment,
-                    vscode.DiagnosticSeverity.Hint
-                );
-                diagnostic.source = this.personality.getName();
-                diagnostics.push(diagnostic);
-            }
+            // Skip proactive comments for now - will be handled by mentor profiles
         });
         
         this.diagnosticCollection.set(document.uri, diagnostics);
         
         // Show status encouragement
         if (changedText.length > 0) {
-            const encouragements = this.personality.getTypingEncouragement();
-            const randomEncouragement = encouragements[Math.floor(Math.random() * encouragements.length)];
-            vscode.window.setStatusBarMessage(randomEncouragement, 3000);
+            const activeProfile = this.profileManager?.getActiveProfile();
+            const encouragement = `🤖 ${activeProfile?.name || 'AI Mentor'} is analyzing your brilliant work...`;
+            vscode.window.setStatusBarMessage(encouragement, 3000);
         }
     }
 
     private showTypingEncouragement() {
         if (!this.isEnabled) return;
         
-        const encouragements = this.personality.getTypingEncouragement();
-        const randomEncouragement = encouragements[Math.floor(Math.random() * encouragements.length)];
-        vscode.window.setStatusBarMessage(randomEncouragement, 2000);
+        const activeProfile = this.profileManager?.getActiveProfile();
+        const encouragement = `🤖 ${activeProfile?.name || 'AI Mentor'} is watching your code...`;
+        vscode.window.setStatusBarMessage(encouragement, 2000);
     }
 
     private runImmediateTest(editor: vscode.TextEditor) {
@@ -509,48 +503,58 @@ export class RealtimeAnalyzer {
             if (hints.length > 0) {
                 hintsFound++;
                 const range = new vscode.Range(index, 0, index, line.length);
+                const activeProfile = this.profileManager?.getActiveProfile();
                 const diagnostic = new vscode.Diagnostic(
                     range,
-                    this.personality.formatCodeReview(hints[0], 'suggestion'),
+                    this.formatMentorMessage(hints[0], 'suggestion', activeProfile),
                     vscode.DiagnosticSeverity.Information
                 );
-                diagnostic.source = this.personality.getName();
+                diagnostic.source = activeProfile?.name || 'AI Mentor';
                 diagnostics.push(diagnostic);
             }
         });
         
         this.diagnosticCollection.set(document.uri, diagnostics);
         
+        const activeProfile = this.profileManager?.getActiveProfile();
         if (hintsFound > 0) {
             vscode.window.showInformationMessage(
-                this.personality.formatCodeReview(
-                    `I found ${hintsFound} areas for improvement! Check the Problems panel for my insights.`,
-                    'encouragement'
-                )
+                `💡 ${activeProfile?.name || 'AI Mentor'}: I found ${hintsFound} areas for improvement! Check the Problems panel for my insights.`
             );
         } else {
             vscode.window.showInformationMessage(
-                this.personality.formatCodeReview(
-                    "Your code looks clean! I'm watching for any opportunities to share my genius-level insights.",
-                    'encouragement'
-                )
+                `✨ ${activeProfile?.name || 'AI Mentor'}: Your code looks clean! I'm watching for opportunities to help.`
             );
         }
     }
 
     public enable() {
         this.isEnabled = true;
-        vscode.window.showInformationMessage(
-            this.personality.formatCodeReview("Real-time analysis is now ENABLED! Let's create some brilliant code together!", 'encouragement')
-        );
+        const activeProfile = this.profileManager?.getActiveProfile();
+        if (activeProfile) {
+            vscode.window.showInformationMessage(
+                `⚡ ${activeProfile.name}: Real-time analysis is now ENABLED! Let's create some brilliant code together!`
+            );
+        } else {
+            vscode.window.showInformationMessage(
+                `⚡ AI Mentor: Real-time analysis ENABLED! Please create a GitHub-based mentor profile for personalized guidance.`
+            );
+        }
     }
 
     public disable() {
         this.isEnabled = false;
         this.diagnosticCollection.clear();
-        vscode.window.showInformationMessage(
-            this.personality.formatCodeReview("Real-time analysis DISABLED. I'll be here when you need my genius insights again!", 'insight')
-        );
+        const activeProfile = this.profileManager?.getActiveProfile();
+        if (activeProfile) {
+            vscode.window.showInformationMessage(
+                `🔧 ${activeProfile.name}: Real-time analysis DISABLED. I'll be here when you need my insights again!`
+            );
+        } else {
+            vscode.window.showInformationMessage(
+                `🔧 AI Mentor: Real-time analysis DISABLED.`
+            );
+        }
     }
 
     private trackUserAction(action: string, context?: any) {
@@ -598,96 +602,69 @@ export class RealtimeAnalyzer {
         if (this.profileManager) {
             const activeProfile = this.profileManager.getActiveProfile();
             if (activeProfile && activeProfile.prompts) {
-                // Transform the message using the mentor's style
-                return this.getMentorStyledMessage(originalMessage, activeProfile);
+                // Transform the message using the mentor's GitHub-based personality
+                return this.formatMessageForGitHubProfile(originalMessage, activeProfile);
             }
         }
         
-        if (!behaviorAnalysis) return originalMessage;
-
-        const empathyScore = behaviorAnalysis.empathyScore;
-        const approach = behaviorAnalysis.suggestedApproach;
-        const sentiment = behaviorAnalysis.sentiment;
-
-        // High empathy needed - be very supportive
-        if (empathyScore > 70 || behaviorAnalysis.emotionalState === 'frustrated' || behaviorAnalysis.emotionalState === 'confused') {
-            return `💙 I understand this can be challenging. ${originalMessage} Take your time - you're doing great!`;
-        }
-
-        // Medium empathy - be encouraging
-        if (empathyScore > 40 || approach === 'encouraging') {
-            return `✨ ${originalMessage} Keep up the excellent work!`;
-        }
-
-        // Low empathy - be direct but positive
-        if (approach === 'direct') {
-            return `⚡ ${originalMessage}`;
-        }
-
-        // Patient approach
-        if (approach === 'patient') {
-            return `🌱 Let's work through this step by step. ${originalMessage} No rush!`;
-        }
-
+        // Fallback to basic message if no profile available
         return originalMessage;
     }
 
-    private analyzeCodeStyle(lines: string[], diagnostics: vscode.Diagnostic[], document: vscode.TextDocument) {
-        lines.forEach((line, index) => {
-            const trimmedLine = line.trim();
-            
-            // Check for inconsistent indentation
-            if (line.length > 0 && !line.startsWith(' ') && !line.startsWith('\t') && line.startsWith(' ')) {
-                const range = new vscode.Range(index, 0, index, line.length);
-                diagnostics.push(new vscode.Diagnostic(
-                    range,
-                    'Inconsistent indentation detected',
-                    vscode.DiagnosticSeverity.Warning
-                ));
-            }
-            
-            // Check for long lines
-            if (line.length > 120) {
-                const range = new vscode.Range(index, 120, index, line.length);
-                diagnostics.push(new vscode.Diagnostic(
-                    range,
-                    'Line too long (>120 characters)',
-                    vscode.DiagnosticSeverity.Information
-                ));
-            }
-            
-            // Check for trailing whitespace
-            if (line.endsWith(' ') || line.endsWith('\t')) {
-                const range = new vscode.Range(index, line.trimEnd().length, index, line.length);
-                diagnostics.push(new vscode.Diagnostic(
-                    range,
-                    'Trailing whitespace',
-                    vscode.DiagnosticSeverity.Hint
-                ));
-            }
-            
-            // Check for missing semicolons in JavaScript/TypeScript
-            if ((document.languageId === 'javascript' || document.languageId === 'typescript') &&
-                trimmedLine.length > 0 && 
-                !trimmedLine.endsWith(';') && 
-                !trimmedLine.endsWith('{') && 
-                !trimmedLine.endsWith('}') &&
-                !trimmedLine.startsWith('//') &&
-                !trimmedLine.includes('if ') &&
-                !trimmedLine.includes('for ') &&
-                !trimmedLine.includes('while ') &&
-                !trimmedLine.includes('function ') &&
-                !trimmedLine.includes('class ') &&
-                !trimmedLine.includes('import ') &&
-                !trimmedLine.includes('export ')) {
-                const range = new vscode.Range(index, line.length, index, line.length);
-                diagnostics.push(new vscode.Diagnostic(
-                    range,
-                    'Missing semicolon',
-                    vscode.DiagnosticSeverity.Warning
-                ));
+    private formatMessageForGitHubProfile(message: string, profile: any): string {
+        const style = profile.personality.communicationStyle;
+        const approach = profile.personality.feedbackApproach;
+        
+        switch (style) {
+            case 'direct':
+                return message;
+            case 'detailed':
+                return `${message} This aligns with best practices in ${profile.personality.expertise.join(', ')}.`;
+            case 'supportive':
+                if (approach === 'encouraging') {
+                    return `Great work! ${message} Keep building on this foundation.`;
+                }
+                return `I'd suggest: ${message}`;
+            case 'concise':
+                return message.split('.')[0]; // Take first sentence only
+            default:
+                return message;
+        }
+    }
+
+    private applyMentorPersonality(diagnostics: vscode.Diagnostic[]) {
+        const activeProfile = this.profileManager.getActiveProfile();
+        
+        if (!activeProfile) return; // Skip if no profile available
+        
+        diagnostics.forEach(diagnostic => {
+            if (diagnostic.message && !diagnostic.message.includes(activeProfile.name)) {
+                const messageType = diagnostic.severity === vscode.DiagnosticSeverity.Error ? 'warning' : 'suggestion';
+                diagnostic.message = this.formatMentorMessage(diagnostic.message, messageType, activeProfile);
             }
         });
+    }
+
+    private formatMentorMessage(message: string, type: 'suggestion' | 'warning' | 'encouragement', profile: any): string {
+        const icon = type === 'warning' ? '⚠️' : type === 'encouragement' ? '💡' : '🔧';
+        
+        if (!profile) {
+            return `${icon} AI Mentor: ${message}`;
+        }
+        
+        // Use the GitHub profile's communication style to format the message
+        switch (profile.personality.communicationStyle) {
+            case 'direct':
+                return `${icon} ${profile.name}: ${message}`;
+            case 'supportive':
+                return `${icon} ${profile.name}: Let me help you improve this: ${message}`;
+            case 'detailed':
+                return `${icon} ${profile.name}: I notice an opportunity for enhancement: ${message}`;
+            case 'concise':
+                return `${icon} ${profile.name}: ${message}`;
+            default:
+                return `${icon} ${profile.name}: ${message}`;
+        }
     }
 
     private detectPotentialBugs(lines: string[], diagnostics: vscode.Diagnostic[], document: vscode.TextDocument) {
@@ -853,15 +830,33 @@ export class RealtimeAnalyzer {
         });
     }
 
-    private applyMentorPersonality(diagnostics: vscode.Diagnostic[]) {
-        if (!this.profileManager) return;
-        
-        const activeProfile = this.profileManager.getActiveProfile();
-        if (!activeProfile) return;
-        
-        diagnostics.forEach(diagnostic => {
-            diagnostic.message = this.getMentorStyledMessage(diagnostic.message, activeProfile);
-            diagnostic.source = activeProfile.name;
+    // Add missing analyzeCodeStyle method
+    private analyzeCodeStyle(lines: string[], diagnostics: vscode.Diagnostic[], document: vscode.TextDocument) {
+        lines.forEach((line, index) => {
+            const trimmedLine = line.trim();
+            
+            // Check for inconsistent indentation
+            if (line.length > 0 && line !== trimmedLine) {
+                const leadingWhitespace = line.substring(0, line.length - trimmedLine.length);
+                if (leadingWhitespace.includes(' ') && leadingWhitespace.includes('\t')) {
+                    const range = new vscode.Range(index, 0, index, leadingWhitespace.length);
+                    diagnostics.push(new vscode.Diagnostic(
+                        range,
+                        'Mixed tabs and spaces for indentation',
+                        vscode.DiagnosticSeverity.Warning
+                    ));
+                }
+            }
+            
+            // Check for long lines
+            if (line.length > 120) {
+                const range = new vscode.Range(index, 120, index, line.length);
+                diagnostics.push(new vscode.Diagnostic(
+                    range,
+                    'Line too long - consider breaking into multiple lines',
+                    vscode.DiagnosticSeverity.Information
+                ));
+            }
         });
     }
 

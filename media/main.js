@@ -11,12 +11,14 @@
     
     // Enhanced state management
     let currentMentor = {
-        id: 'marcus',
-        name: 'Marcus "The Hammer" Thompson',
-        avatar: '💀',
+        id: null,
+        name: 'AI Mentor',
+        avatar: '🤖',
         isTyping: false,
         lastActivity: Date.now()
     };
+    
+    let availableProfiles = [];
     
     let messageQueue = [];
     let isProcessingQueue = false;
@@ -78,25 +80,30 @@
     // Enhanced mentor dropdown selection
     mentorSelect.addEventListener('change', (e) => {
         const mentorId = e.target.value;
-        if (mentorId && mentorId !== currentMentor.id) {
-            // Show transition animation
-            showMentorTransition(currentMentor.id, mentorId);
-            
-            // Update current mentor
-            currentMentor.id = mentorId;
-            currentMentor.name = getMentorName(mentorId);
-            currentMentor.avatar = getMentorAvatar(mentorId);
-            
-            // Send message to extension
-            vscode.postMessage({ 
-                type: 'switchProfile', 
-                profileId: mentorId 
-            });
-            
-            // Add system message about mentor switch
-            addSystemMessage(`${currentMentor.avatar} ${currentMentor.name} has joined the conversation!`);
-            
-            updateStatus(`${currentMentor.name} is ready to help`);
+        if (mentorId && mentorId !== currentMentor.id && availableProfiles.length > 0) {
+            const selectedProfile = availableProfiles.find(p => p.id === mentorId);
+            if (selectedProfile) {
+                // Show transition animation
+                if (currentMentor.id) {
+                    showMentorTransition(currentMentor.id, mentorId);
+                }
+                
+                // Update current mentor
+                currentMentor.id = selectedProfile.id;
+                currentMentor.name = selectedProfile.name;
+                currentMentor.avatar = selectedProfile.avatar || '🤖';
+                
+                // Send message to extension
+                vscode.postMessage({ 
+                    type: 'switchProfile', 
+                    profileId: mentorId 
+                });
+                
+                // Add system message about mentor switch
+                addSystemMessage(`${currentMentor.avatar} ${currentMentor.name} has joined the conversation!`);
+                
+                updateStatus(`${currentMentor.name} is ready to help`);
+            }
         }
     });
 
@@ -113,8 +120,7 @@
                 updateStatus(message.status);
                 break;
             case 'updateProfiles':
-                updateActiveMentor(message.activeProfileId);
-                updateMentorName(message.activeMentorName);
+                updateProfiles(message.profiles, message.activeProfileId, message.activeMentorName);
                 break;
             case 'mentorTyping':
                 showTypingIndicator();
@@ -314,20 +320,86 @@
         }
     }
 
-    function updateActiveMentor(activeProfileId) {
-        // Update dropdown selection
-        if (activeProfileId && mentorSelect) {
-            mentorSelect.value = activeProfileId;
+    function updateProfiles(profiles, activeProfileId, activeMentorName) {
+        console.log('=== PROFILE UPDATE ===');
+        console.log('Received profiles:', profiles?.length || 0, 'profiles');
+        console.log('Active profile ID:', activeProfileId);
+        console.log('Active mentor name:', activeMentorName);
+        
+        if (profiles && profiles.length > 0) {
+            console.log('Profile details:');
+            profiles.forEach((profile, index) => {
+                console.log(`  ${index + 1}. ID: ${profile.id}, Name: ${profile.name}`);
+                if (profile.personality) {
+                    console.log(`    - Communication: ${profile.personality.communicationStyle}`);
+                    console.log(`    - Expertise: ${profile.personality.expertise?.join(', ') || 'N/A'}`);
+                    console.log(`    - Focus Areas: ${profile.personality.focusAreas?.join(', ') || 'N/A'}`);
+                }
+                if (profile.githubInsights) {
+                    console.log(`    - GitHub Stats: ${profile.githubInsights.totalRepos} repos, ${profile.githubInsights.totalStars} stars`);
+                    console.log(`    - Primary Languages: ${profile.githubInsights.primaryLanguages?.join(', ') || 'N/A'}`);
+                }
+                if (profile.codeStylePreferences) {
+                    console.log(`    - Code Style: ${profile.codeStylePreferences.indentStyle} indentation, ${profile.codeStylePreferences.maxLineLength} max line length`);
+                }
+                console.log(`    - Full profile:`, profile);
+            });
+        } else {
+            console.log('No profiles received or empty array');
         }
+        
+        // Store available profiles
+        availableProfiles = profiles || [];
+        
+        // Update dropdown options
+        if (mentorSelect) {
+            // Clear existing options
+            mentorSelect.innerHTML = '';
+            
+            if (availableProfiles.length === 0) {
+                mentorSelect.innerHTML = '<option value="">No mentor profiles available</option>';
+                mentorSelect.disabled = true;
+            } else {
+                mentorSelect.disabled = false;
+                
+                // Add profile options
+                availableProfiles.forEach(profile => {
+                    const option = document.createElement('option');
+                    option.value = profile.id;
+                    option.textContent = profile.name;
+                    option.selected = profile.id === activeProfileId;
+                    mentorSelect.appendChild(option);
+                });
+            }
+        }
+        
+        // Update current mentor state
+        if (activeProfileId) {
+            const activeProfile = availableProfiles.find(p => p.id === activeProfileId);
+            if (activeProfile) {
+                console.log('Setting active mentor:', activeProfile.name, '(ID:', activeProfile.id, ')');
+                currentMentor.id = activeProfile.id;
+                currentMentor.name = activeProfile.name;
+                currentMentor.avatar = activeProfile.avatar || '🤖';
+            } else {
+                console.warn('Active profile ID not found in available profiles:', activeProfileId);
+            }
+        } else {
+            console.log('No active profile ID provided');
+        }
+        
+        // Update mentor name display
+        const displayName = activeMentorName || currentMentor.name;
+        console.log('Updating display name to:', displayName);
+        updateMentorName(displayName);
+        console.log('=== END PROFILE UPDATE ===');
     }
 
     function getMentorName(mentorId) {
-        const mentorNames = {
-            'marcus': 'Marcus "The Hammer"',
-            'sophia': 'Sophia "Sass"', 
-            'alex': 'Alex "Sunshine"'
-        };
-        return mentorNames[mentorId] || 'AI Mentor';
+        if (!mentorId) return 'AI Mentor';
+        
+        const profile = availableProfiles.find(p => p.id === mentorId);
+        return profile ? profile.name : 'AI Mentor';
     }
 
     function updateMentorName(mentorName) {
@@ -342,7 +414,11 @@
         // Update welcome message if it exists
         const welcomeMessage = document.querySelector('.welcome-message h3');
         if (welcomeMessage) {
-            welcomeMessage.textContent = `👋 Welcome! I'm ${mentorName || 'AI Mentor'}`;
+            if (availableProfiles.length > 0) {
+                welcomeMessage.textContent = `👋 Welcome! I'm ${mentorName || 'AI Mentor'}`;
+            } else {
+                welcomeMessage.textContent = '👋 Welcome to AI Mentor!';
+            }
         }
         
         // Update status to show active mentor
@@ -357,12 +433,10 @@
 
     // Enhanced utility functions
     function getMentorAvatar(mentorId) {
-        const avatars = {
-            'marcus': '💀',
-            'sophia': '😏',
-            'alex': '🌟'
-        };
-        return avatars[mentorId] || '🤖';
+        if (!mentorId) return '🤖';
+        
+        const profile = availableProfiles.find(p => p.id === mentorId);
+        return profile ? (profile.avatar || '🤖') : '🤖';
     }
 
     function addUserMessage(code) {
@@ -632,9 +706,8 @@
     });
 
     // Initialize enhanced features
-    updateActiveMentor('marcus');
-    updateMentorName('Marcus "The Hammer" Thompson');
-    updateStatus('Marcus "The Hammer" is ready to help');
+    updateMentorName('AI Mentor');
+    updateStatus('AI Mentor is ready to help');
     
     // Add welcome animation
     setTimeout(() => {
