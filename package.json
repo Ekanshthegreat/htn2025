@@ -1,0 +1,174 @@
+{
+  "name": "ai-debugger-mentor",
+  "displayName": "AI Debugger Mentor",
+  "description": "Proactive AI pair programming mentor that watches your code and provides real-time guidance",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Machine Learning",
+    "Education"
+  ],
+  "activationEvents": [
+    "onLanguage:javascript",
+    "onLanguage:typescript",
+    "onLanguage:python",
+    "onLanguage:java",
+    "onLanguage:cpp"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiMentor.activate",
+        "title": "Activate AI Mentor",
+        "category": "AI Mentor"
+      },
+      {
+        "command": "aiMentor.deactivate",
+        "title": "Deactivate AI Mentor",
+        "category": "AI Mentor"
+      },
+      {
+        "command": "aiMentor.startDebugging",
+        "title": "Start Guided Debugging",
+        "category": "AI Mentor"
+      },
+      {
+        "command": "aiMentor.traceExecution",
+        "title": "Trace Code Execution",
+        "category": "AI Mentor"
+      },
+      {
+        "command": "aiMentor.startVoiceConversation",
+        "title": "🎤 Start Voice Conversation",
+        "category": "AI Mentor Voice"
+      },
+      {
+        "command": "aiMentor.startMultiModalAgent",
+        "title": "🤖 Start Multi-Modal Agent",
+        "category": "AI Mentor Voice"
+      },
+      {
+        "command": "aiMentor.toggleVoice",
+        "title": "🔊 Toggle Voice Narration",
+        "category": "AI Mentor Voice"
+      },
+      {
+        "command": "aiMentor.toggleConversationalMode",
+        "title": "💬 Toggle Conversational Mode",
+        "category": "AI Mentor Voice"
+      },
+      {
+        "command": "aiMentor.showEngineeringReport",
+        "title": "📊 Show Engineering Report",
+        "category": "AI Mentor Engineering"
+      },
+      {
+        "command": "aiMentor.analyzeEngineeringPractices",
+        "title": "🔍 Analyze Engineering Practices",
+        "category": "AI Mentor Engineering"
+      },
+      {
+        "command": "aiMentor.narrateEngineeringPractices",
+        "title": "🎙️ Narrate Engineering Practices",
+        "category": "AI Mentor Engineering"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "aiMentorPanel",
+          "name": "AI Mentor",
+          "when": "aiMentor.active"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aiMentor",
+          "title": "AI Mentor",
+          "icon": "$(robot)"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "AI Mentor",
+      "properties": {
+        "aiMentor.llmProvider": {
+          "type": "string",
+          "default": "gemini",
+          "enum": ["gemini", "openai", "anthropic"],
+          "description": "LLM provider to use for AI mentor"
+        },
+        "aiMentor.apiKey": {
+          "type": "string",
+          "description": "API key for the selected LLM provider"
+        },
+        "aiMentor.vapiApiKey": {
+          "type": "string",
+          "description": "VAPI API key for voice AI features"
+        },
+        "aiMentor.enableVoiceNarration": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable voice narration of code flow"
+        },
+        "aiMentor.multiModalMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable multi-modal agent with voice and visual analysis"
+        },
+        "aiMentor.conversationalDebugging": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable conversational debugging with voice commands"
+        },
+        "aiMentor.proactiveMode": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable proactive suggestions and warnings"
+        },
+        "aiMentor.engineeringAnalysis": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Graphite-inspired engineering practices analysis"
+        },
+        "aiMentor.voiceProvider": {
+          "type": "string",
+          "default": "vapi",
+          "enum": ["vapi", "browser"],
+          "description": "Voice provider to use (VAPI for advanced features, browser for basic)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "16.x",
+    "@types/ws": "^8.5.0",
+    "typescript": "^4.9.4"
+  },
+  "dependencies": {
+    "@babel/parser": "^7.23.0",
+    "@babel/traverse": "^7.23.0",
+    "@babel/types": "^7.23.0",
+    "@google/generative-ai": "^0.2.1",
+    "@vapi-ai/web": "^1.0.0",
+    "auth0": "^4.0.1",
+    "diff": "^5.1.0",
+    "tree-sitter": "^0.20.4",
+    "tree-sitter-javascript": "^0.20.1",
+    "tree-sitter-python": "^0.20.4",
+    "tree-sitter-typescript": "^0.20.3",
+    "ws": "^8.14.0"
+  }
+}
