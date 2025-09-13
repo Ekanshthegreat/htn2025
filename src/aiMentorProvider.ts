@@ -100,16 +100,211 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
 
     private async requestExplanation(code: string) {
         const activeEditor = vscode.window.activeTextEditor;
-        if (!activeEditor) return;
+        if (!activeEditor) {
+            this.sendErrorToWebview('No active editor found');
+            return;
+        }
 
-        const response = await this.llmService.sendMessage({
-            type: 'start_debugging',
-            code: code,
-            language: activeEditor.document.languageId
-        });
+        try {
+            // Send typing indicator to webview
+            this._view?.webview.postMessage({ type: 'mentorTyping' });
 
-        if (response) {
-            this.addMessage(response);
+            const response = await this.llmService.sendMessage({
+                type: 'start_debugging',
+                code: code,
+                language: activeEditor.document.languageId
+            });
+
+            if (response) {
+                this.addMessage(response);
+            } else {
+                // Fallback response if LLM fails
+                const fallbackResponse = this.createFallbackResponse(code, activeEditor.document.languageId);
+                this.addMessage(fallbackResponse);
+            }
+        } catch (error) {
+            console.error('Request explanation failed:', error);
+            const errorResponse = this.createErrorResponse(error);
+            this.addMessage(errorResponse);
+        }
+    }
+
+    private createFallbackResponse(code: string, language: string): any {
+        const activeProfile = this.profileManager?.getActiveProfile();
+        const mentorId = activeProfile?.id || 'marcus';
+        const mentorName = activeProfile?.name || 'AI Mentor';
+        
+        // Pattern-based analysis with personality-specific responses
+        let suggestions = [];
+        let warnings = [];
+        let message = '';
+        
+        // Analyze code patterns
+        const hasConsoleLog = code.includes('console.log');
+        const hasVar = code.includes('var ');
+        const hasLooseEquality = code.includes('==') && !code.includes('===');
+        const hasArrowFunctions = code.includes('=>');
+        const hasAsync = code.includes('async') || code.includes('await');
+        const hasComments = code.includes('//') || code.includes('/*');
+        const lineCount = code.split('\n').length;
+        
+        // Generate personality-specific responses
+        switch (mentorId) {
+            case 'marcus':
+                message = `${mentorName}: *cracks knuckles* Alright, let me tear this ${language} code apart...`;
+                
+                if (hasConsoleLog) {
+                    warnings.push("Console.log? Really? What is this, amateur hour? Use a proper logging framework!");
+                }
+                if (hasVar) {
+                    warnings.push("'var'? Did you time travel from 2010? Use 'let' or 'const' like a professional!");
+                }
+                if (hasLooseEquality) {
+                    warnings.push("Loose equality (==)? That's how bugs are born. Use === and save yourself the headache!");
+                }
+                if (!hasComments && lineCount > 10) {
+                    warnings.push("No comments? Good luck remembering what this mess does in 6 months!");
+                }
+                
+                if (warnings.length === 0) {
+                    suggestions.push("Fine, your code doesn't completely suck. But I'm watching you...");
+                } else {
+                    suggestions.push("Fix these rookie mistakes and maybe you'll write decent code someday.");
+                }
+                break;
+                
+            case 'sophia':
+                message = `${mentorName}: *adjusts glasses with a smirk* Oh, this ${language} code is... interesting. Let me guess what happened here...`;
+                
+                if (hasConsoleLog) {
+                    suggestions.push("Console.log everywhere? It's like leaving breadcrumbs, but less useful. Try a real logging library - your future self will thank you.");
+                }
+                if (hasVar) {
+                    suggestions.push("Using 'var'? How charmingly retro! It's like using Internet Explorer by choice. Let's upgrade to 'let' or 'const', shall we?");
+                }
+                if (hasLooseEquality) {
+                    warnings.push("Ah yes, loose equality - because who needs predictable behavior? Use === unless you enjoy debugging mysterious type coercion bugs.");
+                }
+                if (hasArrowFunctions) {
+                    suggestions.push("Nice arrow functions! At least someone's keeping up with modern JavaScript. Gold star for you! ⭐");
+                }
+                
+                if (warnings.length === 0 && suggestions.length <= 1) {
+                    suggestions.push("Well well, look who actually knows how to write decent code. Color me impressed! 💅");
+                }
+                break;
+                
+            case 'alex':
+                message = `${mentorName}: OMG! 🌟 Your ${language} code is SO COOL! I'm literally bouncing with excitement to help you make it even MORE AMAZING!`;
+                
+                if (hasConsoleLog) {
+                    suggestions.push("I LOVE that you're debugging with console.log! 🐛 For production, maybe we could try a fancy logging library? It'll be AWESOME!");
+                }
+                if (hasVar) {
+                    suggestions.push("Ooh, 'var'! Classic choice! 💫 But 'let' and 'const' are like the cool new kids - they have better scoping superpowers! ✨");
+                }
+                if (hasLooseEquality) {
+                    suggestions.push("Loose equality is fun, but strict equality (===) is like a superhero cape for your code! 🦸‍♂️ It prevents sneaky bugs!");
+                }
+                if (hasAsync) {
+                    suggestions.push("ASYNC CODE! 🚀 You're handling asynchronous operations like a CHAMPION! This is so exciting!");
+                }
+                if (hasComments) {
+                    suggestions.push("YES! Comments! 📝 You're documenting your brilliant thoughts! Future you is going to be SO grateful!");
+                }
+                
+                if (suggestions.length === 0) {
+                    suggestions.push("This code is FANTASTIC! 🎉 You're doing AMAZING work! Keep being the coding superstar you are! ⭐✨🌟");
+                }
+                break;
+                
+            default:
+                message = `${mentorName}: I've analyzed your ${language} code. Here's what I found:`;
+                if (hasConsoleLog) suggestions.push('Consider using a proper logging library for production code');
+                if (hasVar) suggestions.push('Use let or const instead of var for better scoping');
+                if (hasLooseEquality) warnings.push('Use strict equality (===) instead of loose equality (==)');
+        }
+        
+        // Ensure we always have at least one suggestion
+        if (suggestions.length === 0 && warnings.length === 0) {
+            switch (mentorId) {
+                case 'marcus':
+                    suggestions.push("Your code doesn't make me want to throw my computer out the window. That's... progress.");
+                    break;
+                case 'sophia':
+                    suggestions.push("Well, this is refreshingly competent. I was expecting much worse, honestly.");
+                    break;
+                case 'alex':
+                    suggestions.push("Your code is PERFECT and BEAUTIFUL and makes me so HAPPY! 🌈✨💖");
+                    break;
+                default:
+                    suggestions.push('Your code looks clean! Keep up the good work.');
+            }
+        }
+        
+        return {
+            message,
+            suggestions,
+            warnings,
+            type: 'explanation'
+        };
+    }
+
+    private createErrorResponse(error: any): any {
+        const activeProfile = this.profileManager?.getActiveProfile();
+        const mentorId = activeProfile?.id || 'marcus';
+        const mentorName = activeProfile?.name || 'AI Mentor';
+        
+        let message = '';
+        let suggestions = [];
+        
+        switch (mentorId) {
+            case 'marcus':
+                message = `${mentorName}: Great. Just great. My AI brain is having a meltdown. This is what happens when you rely on technology!`;
+                suggestions = [
+                    'Check your API key - probably misconfigured like everything else',
+                    'Make sure you have internet - basic stuff, really',
+                    'Try again, but lower your expectations'
+                ];
+                break;
+                
+            case 'sophia':
+                message = `${mentorName}: *rolls eyes* Oh wonderful, the AI is having an existential crisis. How very... predictable.`;
+                suggestions = [
+                    'Check your API key in settings - it\'s probably as confused as this error message',
+                    'Verify internet connectivity - because apparently that\'s still a thing we need to do',
+                    'Try again when the digital gods are feeling more cooperative'
+                ];
+                break;
+                
+            case 'alex':
+                message = `${mentorName}: Oopsie! 😅 I'm having a tiny technical hiccup! But don't worry - we'll get through this TOGETHER! 💪✨`;
+                suggestions = [
+                    'Let\'s check that API key in VS Code settings! It\'ll be an adventure! 🔑',
+                    'Make sure you\'re connected to the internet - we need those digital highways! 🌐',
+                    'Try again! I believe in us! We\'ve got this! 🚀💖'
+                ];
+                break;
+                
+            default:
+                message = `${mentorName}: Sorry, I'm having trouble analyzing your code right now. Please check your API configuration and try again.`;
+                suggestions = ['Check your API key in VS Code settings', 'Ensure you have internet connectivity'];
+        }
+        
+        return {
+            message,
+            suggestions,
+            warnings: [`Error: ${error.message || 'Unknown error'}`],
+            type: 'warning'
+        };
+    }
+
+    private sendErrorToWebview(message: string) {
+        if (this._view) {
+            this._view.webview.postMessage({
+                type: 'error',
+                message: message
+            });
         }
     }
 

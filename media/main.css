@@ -253,3 +253,415 @@ body {
     color: var(--vscode-input-foreground);
     padding: 4px;
 }
+
+/* Enhanced animations and interactions */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes bounce {
+    0%, 20%, 53%, 80%, 100% {
+        transform: translate3d(0,0,0);
+    }
+    40%, 43% {
+        transform: translate3d(0, -8px, 0);
+    }
+    70% {
+        transform: translate3d(0, -4px, 0);
+    }
+    90% {
+        transform: translate3d(0, -2px, 0);
+    }
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    10%, 30%, 50%, 70%, 90% { transform: translateX(-2px); }
+    20%, 40%, 60%, 80% { transform: translateX(2px); }
+}
+
+@keyframes typing {
+    0%, 60%, 100% { transform: translateY(0); }
+    30% { transform: translateY(-10px); }
+}
+
+.animate-bounce {
+    animation: bounce 2s infinite;
+}
+
+.shake {
+    animation: shake 0.5s ease-in-out;
+}
+
+/* Enhanced message styles */
+.message {
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.message:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.message-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-weight: bold;
+}
+
+.message-title {
+    flex: 1;
+    margin-left: 8px;
+}
+
+.message-timestamp {
+    font-size: 11px;
+    opacity: 0.6;
+    margin-right: 8px;
+}
+
+.message-actions {
+    background: none;
+    border: none;
+    color: var(--vscode-foreground);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 2px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.message:hover .message-actions {
+    opacity: 1;
+}
+
+.message-actions:hover {
+    background: var(--vscode-button-hoverBackground);
+}
+
+.message-actions-menu {
+    position: absolute;
+    top: 30px;
+    right: 0;
+    background: var(--vscode-menu-background);
+    border: 1px solid var(--vscode-menu-border);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 100;
+    min-width: 120px;
+}
+
+.message-actions-menu button {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    background: none;
+    border: none;
+    color: var(--vscode-menu-foreground);
+    text-align: left;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.message-actions-menu button:hover {
+    background: var(--vscode-menu-selectionBackground);
+}
+
+/* User and system messages */
+.user-message {
+    background-color: var(--vscode-input-background);
+    border-left-color: var(--vscode-terminal-ansiCyan);
+    margin-left: 20px;
+}
+
+.system-message {
+    background-color: var(--vscode-badge-background);
+    color: var(--vscode-badge-foreground);
+    border-radius: 20px;
+    padding: 8px 16px;
+    margin: 8px auto;
+    text-align: center;
+    max-width: 300px;
+    border: none;
+}
+
+.system-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 13px;
+}
+
+/* Enhanced suggestions and warnings */
+.suggestions-container, .warnings-container {
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 6px;
+    background: var(--vscode-textBlockQuote-background);
+    border-left: 3px solid var(--vscode-terminal-ansiGreen);
+}
+
+.warnings-container {
+    border-left-color: var(--vscode-terminal-ansiYellow);
+}
+
+.suggestions-container h4, .warnings-container h4 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.suggestion-item, .warning-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    margin: 4px 0;
+    background: var(--vscode-input-background);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.suggestion-item:hover {
+    background: var(--vscode-list-hoverBackground);
+    transform: translateX(4px);
+}
+
+.suggestion-apply {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.suggestion-item:hover .suggestion-apply {
+    opacity: 1;
+}
+
+.warning-dismiss {
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+    border: none;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+/* Enhanced code snippets */
+.code-snippet-container {
+    margin: 12px 0;
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.code-snippet-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--vscode-editor-background);
+    border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.code-language {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--vscode-terminal-ansiBlue);
+    text-transform: uppercase;
+}
+
+.copy-code {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.copy-code:hover {
+    background: var(--vscode-button-hoverBackground);
+}
+
+.code-explanation {
+    padding: 8px 12px;
+    background: var(--vscode-textBlockQuote-background);
+    font-size: 13px;
+    line-height: 1.4;
+    border-top: 1px solid var(--vscode-panel-border);
+}
+
+/* Typing indicator */
+.typing-indicator {
+    padding: 12px;
+    margin: 8px 0;
+    background: var(--vscode-input-background);
+    border-radius: 20px;
+    border-left: 4px solid var(--vscode-terminal-ansiBlue);
+}
+
+.typing-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.mentor-avatar {
+    font-size: 18px;
+}
+
+.typing-text {
+    font-style: italic;
+    color: var(--vscode-descriptionForeground);
+}
+
+.typing-dots {
+    display: flex;
+    gap: 2px;
+}
+
+.typing-dots span {
+    width: 4px;
+    height: 4px;
+    background: var(--vscode-terminal-ansiBlue);
+    border-radius: 50%;
+    animation: typing 1.4s infinite ease-in-out;
+}
+
+.typing-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.typing-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+/* Mentor transition */
+.mentor-transition {
+    text-align: center;
+    padding: 16px;
+    margin: 8px 0;
+    background: var(--vscode-badge-background);
+    color: var(--vscode-badge-foreground);
+    border-radius: 20px;
+    transition: opacity 0.3s;
+}
+
+.transition-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    font-size: 18px;
+}
+
+.transition-arrow {
+    font-size: 16px;
+    color: var(--vscode-terminal-ansiGreen);
+}
+
+/* Mentor personality effects */
+.marcus-harsh {
+    border-left-color: var(--vscode-terminal-ansiRed) !important;
+    background: linear-gradient(90deg, rgba(255, 0, 0, 0.1) 0%, transparent 100%);
+}
+
+.sophia-witty {
+    border-left-color: var(--vscode-terminal-ansiMagenta) !important;
+    background: linear-gradient(90deg, rgba(255, 0, 255, 0.1) 0%, transparent 100%);
+}
+
+.alex-positive {
+    border-left-color: var(--vscode-terminal-ansiGreen) !important;
+    background: linear-gradient(90deg, rgba(0, 255, 0, 0.1) 0%, transparent 100%);
+}
+
+.alex-excited {
+    animation: bounce 0.6s ease-in-out;
+}
+
+/* Enhanced button states */
+.btn.processing {
+    background: var(--vscode-terminal-ansiBlue) !important;
+    color: white;
+    position: relative;
+    overflow: hidden;
+}
+
+.btn.processing::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0% { left: -100%; }
+    100% { left: 100%; }
+}
+
+/* Mentor mood indicators */
+.mentor-mood-happy #mentorTitle {
+    color: var(--vscode-terminal-ansiGreen);
+}
+
+.mentor-mood-frustrated #mentorTitle {
+    color: var(--vscode-terminal-ansiRed);
+}
+
+.mentor-mood-focused #mentorTitle {
+    color: var(--vscode-terminal-ansiBlue);
+}
+
+/* Enhanced input */
+#codeInput {
+    transition: all 0.3s ease;
+    resize: none;
+}
+
+#codeInput:focus {
+    transform: scale(1.02);
+    box-shadow: 0 0 0 2px var(--vscode-focusBorder);
+}
+
+/* Responsive design */
+@media (max-width: 600px) {
+    .message-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+    
+    .message-timestamp {
+        margin-right: 0;
+    }
+    
+    .suggestion-item, .warning-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+}
