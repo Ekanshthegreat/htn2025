@@ -12,6 +12,7 @@ body {
     height: 100vh;
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
 }
 
 .header {
@@ -62,6 +63,8 @@ body {
     background-color: var(--vscode-editor-background);
     border: 1px solid var(--vscode-panel-border);
     border-radius: 4px;
+    min-height: 0; /* Allow flex item to shrink below content size */
+    max-height: calc(100vh - 280px); /* Reserve space for header, status, input section, and padding */
 }
 
 .welcome-message {
@@ -155,10 +158,13 @@ body {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    flex-shrink: 0; /* Prevent input section from shrinking */
+    min-height: 120px; /* Ensure minimum space for input and button */
 }
 
 #codeInput {
     min-height: 80px;
+    max-height: 120px; /* Prevent textarea from growing too large */
     padding: 8px;
     background-color: var(--vscode-input-background);
     color: var(--vscode-input-foreground);
