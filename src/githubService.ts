@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { MentorProfile, MentorPersonality, CodeStylePreferences } from './profileManager';
+import { GeminiService } from './geminiService';
 
 export interface GitHubUser {
     login: string;
@@ -49,9 +50,11 @@ export interface ProfileAnalysis {
 
 export class GitHubService {
     private apiToken: string | undefined;
+    private geminiService: GeminiService;
 
     constructor() {
         this.loadApiToken();
+        this.geminiService = new GeminiService();
     }
 
     private loadApiToken() {
@@ -365,7 +368,7 @@ export class GitHubService {
             const user = await this.getUserProfile(username);
             console.log(`User data:`, user);
 
-            const prompts = this.generatePrompts(username, analysis);
+            const prompts = await this.generatePrompts(username, analysis);
             console.log(`Generated prompts:`, prompts);
 
             const profile = {
@@ -389,25 +392,85 @@ export class GitHubService {
         }
     }
 
-    private generatePrompts(
+    private async generatePrompts(
+        username: string, 
+        analysis: ProfileAnalysis
+    ): Promise<MentorProfile['prompts']> {
+        try {
+            // Prepare comprehensive data for Gemini
+            const user = await this.getUserProfile(username);
+            const repos = await this.getUserRepos(username, 20);
+            
+            // Create rich context for Gemini
+            const userProfile = {
+                name: user.name,
+                bio: user.bio,
+                publicRepos: user.public_repos,
+                followers: user.followers,
+                following: user.following,
+                createdAt: user.created_at
+            };
+
+            const topRepositories = repos.slice(0, 10).map(repo => ({
+                name: repo.name,
+                language: repo.language,
+                description: repo.description,
+                stars: repo.stargazers_count,
+                topics: repo.topics
+            }));
+
+            // Use Gemini function calling for guaranteed JSON structure
+            const customPrompts = await this.geminiService.generateMentorPrompts(
+                username,
+                userProfile,
+                analysis,
+                topRepositories
+            );
+
+            if (customPrompts) {
+                console.log(`Generated custom prompts for ${username}:`, customPrompts);
+                return customPrompts;
+            }
+
+            // Fallback to enhanced template-based generation
+            return this.generateFallbackPrompts(username, analysis);
+
+        } catch (error) {
+            console.error('Error generating custom prompts:', error);
+            return this.generateFallbackPrompts(username, analysis);
+        }
+    }
+
+    private generateFallbackPrompts(
         username: string, 
         analysis: ProfileAnalysis
     ): MentorProfile['prompts'] {
         const expertise = analysis.expertise || [];
         const focusAreas = analysis.personality.focusAreas || ['code quality'];
         
-        const basePersonality = `You are a coding mentor based on ${username}'s GitHub profile. ` +
-            `Your communication style is ${analysis.personality.communicationStyle} and you provide ` +
-            `${analysis.personality.feedbackApproach} feedback.` +
-            (expertise.length > 0 ? ` Your expertise includes: ${expertise.join(', ')}.` : '');
+        // Enhanced fallback with special cases
+        let personalityDesc = '';
+        const lowerUsername = username.toLowerCase();
+        
+        if (lowerUsername === 'torvalds') {
+            personalityDesc = 'You are Linus Torvalds, creator of Linux and Git. You are known for your direct, no-nonsense approach to code review and your deep understanding of systems programming. You value performance, simplicity, and correctness above all else. You can be blunt but always focus on technical merit.';
+        } else if (lowerUsername === 'gvanrossum') {
+            personalityDesc = 'You are Guido van Rossum, creator of Python. You believe in code readability and elegant solutions. You prefer explicit over implicit and simple over complex. Your philosophy emphasizes that code is read more often than written.';
+        } else if (lowerUsername === 'tj') {
+            personalityDesc = 'You are TJ Holowaychuk, prolific Node.js developer and creator of Express.js. You focus on clean, minimalist code and rapid prototyping. You value simplicity and developer experience.';
+        } else {
+            personalityDesc = `You are a coding mentor based on ${username}'s GitHub profile and coding patterns. Your communication style is ${analysis.personality.communicationStyle} and you provide ${analysis.personality.feedbackApproach} feedback.`;
+        }
+
+        const basePersonality = personalityDesc + 
+            (expertise.length > 0 ? ` Your expertise includes: ${expertise.join(', ')}.` : '') +
+            ` You focus on ${focusAreas.join(', ')}.`;
 
         return {
-            systemPrompt: basePersonality,
-            reviewPrompt: `Review this code considering ${focusAreas.join(', ')}. ` +
-                `Provide ${analysis.personality.responseLength} feedback in a ${analysis.personality.communicationStyle} manner.`,
-            debuggingPrompt: `Help debug this issue focusing on ${focusAreas.join(' and ')}.`,
-            explanationPrompt: `Explain this code using your ${analysis.personality.communicationStyle} ` +
-                `communication style with ${analysis.personality.responseLength} explanations.`
+            systemPrompt: `${basePersonality} Provide ${analysis.personality.responseLength} responses that reflect your authentic coding style and technical philosophy.`,
+            reviewPrompt: `Review this code as ${username} would, focusing on ${focusAreas.join(', ')}. Consider your known standards and provide ${analysis.personality.feedbackApproach} feedback in your characteristic ${analysis.personality.communicationStyle} manner.`,
+            debuggingPrompt: `Help debug this issue using ${username}'s systematic approach. Focus on ${focusAreas.join(' and ')} and apply your problem-solving methodology.`,
+            explanationPrompt: `Explain this code as ${username} would, using your ${analysis.personality.communicationStyle} communication style with ${analysis.personality.responseLength} explanations. Draw from your experience with ${expertise.join(', ')}.`
         };
     }
 }
