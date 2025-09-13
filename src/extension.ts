@@ -8,6 +8,7 @@ import { GraphiteService } from './graphiteService';
 import { RealtimeAnalyzer } from './realtimeAnalyzer';
 import { ProfileManager } from './profileManager';
 import { GitHubService } from './githubService';
+import { GenesysService } from './genesysService';
 
 let aiMentorProvider: AIMentorProvider;
 let codeWatcher: CodeWatcher;

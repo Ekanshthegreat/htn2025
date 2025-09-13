@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { LLMService } from './llmService';
 import { VoiceService } from './voiceService';
 import { MentorPersonalityService } from './mentorPersonality';
+import { GenesysService, UserBehaviorAnalysis } from './genesysService';
 
 export interface CodeSuggestion {
     range: vscode.Range;
@@ -19,12 +20,18 @@ export class RealtimeAnalyzer {
 
     private isEnabled = true;
     private personality: MentorPersonalityService;
+    private genesysService: GenesysService;
+    private userActions: Array<{ action: string; timestamp: Date; context?: any }> = [];
+    private sessionStart: Date = new Date();
+    private errorCount = 0;
+    private completionCount = 0;
 
     constructor(
         private llmService: LLMService,
         private voiceService: VoiceService
     ) {
         this.personality = new MentorPersonalityService();
+        this.genesysService = new GenesysService();
         this.diagnosticCollection = vscode.languages.createDiagnosticCollection('aiMentor');
         
         // Create decoration for inline hints
@@ -387,12 +394,18 @@ export class RealtimeAnalyzer {
         return matrix[str2.length][str1.length];
     }
 
-    private provideInstantFeedback(event: vscode.TextDocumentChangeEvent) {
+    private async provideInstantFeedback(event: vscode.TextDocumentChangeEvent) {
         if (!this.isEnabled) return;
         
         const document = event.document;
         const editor = vscode.window.activeTextEditor;
         if (!editor || editor.document !== document) return;
+        
+        // Track user actions for Genesys analysis
+        this.trackUserAction('document_change', { 
+            fileName: document.fileName,
+            changeCount: event.contentChanges.length 
+        });
         
         // Debug logging
         console.log('🔧 Nikola: Document changed, analyzing...', document.fileName);
@@ -403,8 +416,11 @@ export class RealtimeAnalyzer {
         
         const latestChange = changes[changes.length - 1];
         const changedText = latestChange.text;
+
+        // Analyze user behavior with Genesys for empathy-driven suggestions
+        const behaviorAnalysis = await this.analyzeUserBehaviorWithGenesys(document.getText());
         
-        // Immediate pattern-based feedback
+        // Immediate pattern-based feedback with empathy adjustments
         const diagnostics: vscode.Diagnostic[] = [];
         
         // Check each line for instant feedback
@@ -413,22 +429,28 @@ export class RealtimeAnalyzer {
             const hints = this.getPatternBasedHints(line, document.languageId);
             hints.forEach(hint => {
                 const range = new vscode.Range(index, 0, index, line.length);
+                
+                // Adjust message based on user's emotional state and empathy needs
+                const empathyAdjustedMessage = this.adjustMessageForEmpathy(hint, behaviorAnalysis);
+                
                 const diagnostic = new vscode.Diagnostic(
                     range,
-                    this.personality.formatCodeReview(hint, 'suggestion'),
-                    vscode.DiagnosticSeverity.Information
+                    empathyAdjustedMessage,
+                    this.getSeverityBasedOnEmpathy(behaviorAnalysis)
                 );
-                diagnostic.source = this.personality.getName();
+                diagnostic.source = `${this.personality.getName()} (Empathy: ${behaviorAnalysis?.empathyScore || 50})`;
                 diagnostics.push(diagnostic);
             });
             
-            // Proactive comments for code patterns
+            // Proactive comments for code patterns with empathy
             const proactiveComment = this.personality.getProactiveComment(line);
             if (proactiveComment) {
                 const range = new vscode.Range(index, 0, index, line.length);
+                const empathyAdjustedComment = this.adjustMessageForEmpathy(proactiveComment, behaviorAnalysis);
+                
                 const diagnostic = new vscode.Diagnostic(
                     range,
-                    proactiveComment,
+                    empathyAdjustedComment,
                     vscode.DiagnosticSeverity.Hint
                 );
                 diagnostic.source = this.personality.getName();
@@ -510,6 +532,101 @@ export class RealtimeAnalyzer {
         vscode.window.showInformationMessage(
             this.personality.formatCodeReview("Real-time analysis DISABLED. I'll be here when you need my genius insights again!", 'insight')
         );
+    }
+
+    private trackUserAction(action: string, context?: any) {
+        this.userActions.push({
+            action,
+            timestamp: new Date(),
+            context
+        });
+
+        // Keep only last 50 actions to avoid memory issues
+        if (this.userActions.length > 50) {
+            this.userActions = this.userActions.slice(-50);
+        }
+
+        // Track error patterns
+        if (action.includes('error') || context?.error) {
+            this.errorCount++;
+        }
+        if (action.includes('completion') || action.includes('success')) {
+            this.completionCount++;
+        }
+    }
+
+    private async analyzeUserBehaviorWithGenesys(codeContent: string): Promise<UserBehaviorAnalysis | null> {
+        try {
+            const sessionData = {
+                duration: Date.now() - this.sessionStart.getTime(),
+                errorCount: this.errorCount,
+                completions: this.completionCount
+            };
+
+            return await this.genesysService.analyzeUserBehavior(
+                codeContent,
+                this.userActions,
+                sessionData
+            );
+        } catch (error) {
+            console.warn('Genesys behavior analysis failed:', error);
+            return null;
+        }
+    }
+
+    private adjustMessageForEmpathy(originalMessage: string, behaviorAnalysis: UserBehaviorAnalysis | null): string {
+        if (!behaviorAnalysis) return originalMessage;
+
+        const empathyScore = behaviorAnalysis.empathyScore;
+        const approach = behaviorAnalysis.suggestedApproach;
+        const sentiment = behaviorAnalysis.sentiment;
+
+        // High empathy needed - be very supportive
+        if (empathyScore > 70 || sentiment === 'frustrated' || sentiment === 'confused') {
+            return `💙 I understand this can be challenging. ${originalMessage} Take your time - you're doing great!`;
+        }
+
+        // Medium empathy - be encouraging
+        if (empathyScore > 40 || approach === 'encouraging') {
+            return `✨ ${originalMessage} Keep up the excellent work!`;
+        }
+
+        // Low empathy - be direct but positive
+        if (approach === 'direct') {
+            return `⚡ ${originalMessage}`;
+        }
+
+        // Patient approach for overwhelmed users
+        if (approach === 'patient' || behaviorAnalysis.emotionalState === 'overwhelmed') {
+            return `🌱 Let's work through this step by step. ${originalMessage} No rush!`;
+        }
+
+        return originalMessage;
+    }
+
+    private getSeverityBasedOnEmpathy(behaviorAnalysis: UserBehaviorAnalysis | null): vscode.DiagnosticSeverity {
+        if (!behaviorAnalysis) return vscode.DiagnosticSeverity.Information;
+
+        // For stressed/frustrated users, use gentler severity levels
+        if (behaviorAnalysis.empathyScore > 70 || 
+            behaviorAnalysis.emotionalState === 'stressed' || 
+            behaviorAnalysis.sentiment === 'frustrated') {
+            return vscode.DiagnosticSeverity.Hint; // Gentlest level
+        }
+
+        // For confused users, use information level
+        if (behaviorAnalysis.sentiment === 'confused' || 
+            behaviorAnalysis.emotionalState === 'overwhelmed') {
+            return vscode.DiagnosticSeverity.Information;
+        }
+
+        // For positive/focused users, can use warning level
+        if (behaviorAnalysis.sentiment === 'positive' || 
+            behaviorAnalysis.emotionalState === 'focused') {
+            return vscode.DiagnosticSeverity.Warning;
+        }
+
+        return vscode.DiagnosticSeverity.Information;
     }
 
     public dispose() {
