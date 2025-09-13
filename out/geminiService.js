@@ -43,7 +43,7 @@ class GeminiService {
         try {
             this.genAI = new generative_ai_1.GoogleGenerativeAI(apiKey);
             this.model = this.genAI.getGenerativeModel({
-                model: 'gemini-1.5-pro',
+                model: 'gemini-2.5-pro',
                 generationConfig: {
                     temperature: 0.7,
                     topK: 40,
@@ -88,6 +88,70 @@ class GeminiService {
         catch (error) {
             console.error('Gemini Service error:', error);
             vscode.window.showErrorMessage(`AI Mentor error: ${error}`);
+            return null;
+        }
+    }
+    async generateMentorPrompts(username, userProfile, analysis, topRepositories) {
+        if (!this.model) {
+            return null;
+        }
+        try {
+            const prompt = `You are an expert AI prompt engineer creating authentic mentor personalities based on GitHub profiles.
+
+Analyze this comprehensive GitHub data for ${username}:
+
+**User Profile:**
+${JSON.stringify(userProfile, null, 2)}
+
+**Personality Analysis:**
+${JSON.stringify(analysis.personality, null, 2)}
+
+**Technical Expertise:**
+${JSON.stringify(analysis.expertise, null, 2)}
+
+**Code Style Preferences:**
+${JSON.stringify(analysis.codeStylePreferences, null, 2)}
+
+**Communication Patterns:**
+${JSON.stringify(analysis.communicationPatterns, null, 2)}
+
+**Top Repositories:**
+${JSON.stringify(topRepositories, null, 2)}
+
+Create 4 distinct, authentic prompts that capture ${username}'s unique coding personality and expertise. Make them feel like the real person is mentoring.
+
+For notable developers like 'torvalds', 'gvanrossum', 'tj', 'sindresorhus', etc., incorporate their known public personas and philosophies.
+
+Each prompt should be detailed and authentic, reflecting the developer's actual communication style, technical focus areas, and expertise based on the analysis.
+
+Return JSON in this exact format:
+{
+  "systemPrompt": "You are [name/persona]. [Authentic personality description based on analysis]. Your expertise includes [specific technologies]. You focus on [specific areas]. Provide [response style] responses that reflect your authentic coding philosophy.",
+  "reviewPrompt": "Review this code as [name] would, focusing on [specific focus areas from analysis]. Consider your known standards for [relevant areas]. Provide [communication style] feedback in your characteristic manner.",
+  "debuggingPrompt": "Help debug this issue using [name]'s systematic approach. Focus on [technical patterns from analysis] and apply your problem-solving methodology.",
+  "explanationPrompt": "Explain this code as [name] would, using your [communication style] with [response length] explanations. Draw from your experience with [expertise areas]."
+}`;
+            const result = await this.model.generateContent(prompt);
+            const response = await result.response;
+            const content = response.text();
+            if (!content)
+                return null;
+            try {
+                const customPrompts = JSON.parse(content);
+                // Validate the response has required fields
+                if (customPrompts.systemPrompt && customPrompts.reviewPrompt &&
+                    customPrompts.debuggingPrompt && customPrompts.explanationPrompt) {
+                    console.log(`Generated structured prompts for ${username}:`, customPrompts);
+                    return customPrompts;
+                }
+            }
+            catch (parseError) {
+                console.warn('Failed to parse Gemini prompt response:', parseError);
+            }
+            return null;
+        }
+        catch (error) {
+            console.error('Gemini prompt generation error:', error);
             return null;
         }
     }
