@@ -367,19 +367,14 @@ function debugFunction(data) {
 // TYPE PATTERNS - Test TypeScript advice (if TypeScript mentor)
 // =============================================================================
 
-// Any types (should trigger TypeScript advice)
-function processAnyData(data: any): any {
+// Any types (should trigger TypeScript advice if using TypeScript mentor)
+function processAnyData(data) {
     return data.someProperty;
 }
 
-// Better typing
-interface UserData {
-    id: number;
-    name: string;
-    email: string;
-}
-
-function processUserData(data: UserData): string {
+// Better typing (for TypeScript mentors)
+function processUserDataTyped(data) {
+    // TypeScript mentors will suggest proper typing here
     return `${data.name} (${data.email})`;
 }
 

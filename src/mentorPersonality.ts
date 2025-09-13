@@ -130,8 +130,13 @@ export class MentorPersonalityService {
     }
 
     private getPersonalizedCommentsByPattern(pattern: string, mentorData: any): PersonalizedComment[] {
-        const { username, expertise, focusAreas, communicationStyle, feedbackApproach } = mentorData;
+        const { username, expertise, focusAreas, communicationStyle, feedbackApproach, context } = mentorData;
         const comments: PersonalizedComment[] = [];
+        
+        // Get highly specific suggestions based on mentor's actual background
+        this.addArchitectureSpecificSuggestions(pattern, mentorData, comments);
+        this.addStylingSpecificSuggestions(pattern, mentorData, comments);
+        this.addExpertiseSpecificSuggestions(pattern, mentorData, comments);
 
         // Console.log patterns
         if (pattern.includes('console.log')) {
@@ -241,26 +246,316 @@ export class MentorPersonalityService {
             }
         }
 
-        // Add username-specific patterns for well-known developers
-        if (username === 'torvalds') {
-            comments.push({
-                message: `This code structure reminds me of kernel development principles - keep it simple, efficient, and maintainable. No unnecessary abstractions!`,
-                tone: 'direct',
-                expertise: ['systems', 'c'],
-                context: 'systems'
-            });
-        } else if (username === 'gaearon') {
+        // Add highly specific username-based suggestions
+        this.addUsernameSpecificSuggestions(pattern, username, comments);
+
+        return comments;
+    }
+    
+    private addUsernameSpecificSuggestions(pattern: string, username: string, comments: PersonalizedComment[]): void {
+        switch (username) {
+            case 'torvalds':
+                if (pattern.includes('function') || pattern.includes('class')) {
+                    comments.push({
+                        message: `Keep it simple and efficient. Good code is readable code. Avoid clever tricks that make debugging harder. If you need comments to explain what the code does, the code is probably too complex.`,
+                        tone: 'direct',
+                        expertise: ['systems', 'simplicity'],
+                        context: 'philosophy'
+                    });
+                }
+                if (pattern.includes('async') || pattern.includes('Promise')) {
+                    comments.push({
+                        message: `Async code should be robust and predictable. Handle all error cases explicitly. Don't hide failures - make them visible and debuggable.`,
+                        tone: 'direct',
+                        expertise: ['systems', 'reliability'],
+                        context: 'error-handling'
+                    });
+                }
+                break;
+                
+            case 'gaearon':
+                if (pattern.includes('useState') || pattern.includes('useEffect')) {
+                    comments.push({
+                        message: `React hooks are powerful but have rules. Only call them at the top level, never in loops or conditions. For useEffect, always include dependencies to prevent stale closures and infinite loops.`,
+                        tone: 'analytical',
+                        expertise: ['react', 'hooks'],
+                        context: 'react'
+                    });
+                }
+                if (pattern.includes('Component') || pattern.includes('render')) {
+                    comments.push({
+                        message: `Think about component composition and data flow. Props down, events up. Keep components predictable and debuggable. Use React DevTools to understand your component tree.`,
+                        tone: 'encouraging',
+                        expertise: ['react', 'debugging'],
+                        context: 'react'
+                    });
+                }
+                break;
+                
+            case 'sindresorhus':
+                if (pattern.includes('function') || pattern.includes('export')) {
+                    comments.push({
+                        message: `Focus on creating small, focused, reusable modules. Each function should do one thing well. Consider if this could be extracted into a utility package that others could benefit from.`,
+                        tone: 'encouraging',
+                        expertise: ['modularity', 'open-source'],
+                        context: 'modularity'
+                    });
+                }
+                if (pattern.includes('import') || pattern.includes('require')) {
+                    comments.push({
+                        message: `Keep dependencies minimal and well-maintained. Prefer native solutions when possible. Each dependency is a potential security and maintenance burden.`,
+                        tone: 'pragmatic',
+                        expertise: ['dependencies', 'minimalism'],
+                        context: 'dependencies'
+                    });
+                }
+                break;
+                
+            case 'addyosmani':
+                if (pattern.includes('import') || pattern.includes('require')) {
+                    comments.push({
+                        message: `Consider the performance impact of this import. Is it tree-shakeable? Could it be lazy-loaded? Use webpack-bundle-analyzer to understand your bundle composition.`,
+                        tone: 'analytical',
+                        expertise: ['performance', 'bundling'],
+                        context: 'performance'
+                    });
+                }
+                if (pattern.includes('map') || pattern.includes('filter')) {
+                    comments.push({
+                        message: `Array methods create performance implications. For large datasets, consider virtualization, pagination, or web workers. Measure first, optimize second.`,
+                        tone: 'analytical',
+                        expertise: ['performance', 'optimization'],
+                        context: 'performance'
+                    });
+                }
+                break;
+                
+            case 'kentcdodds':
+                if (pattern.includes('test') || pattern.includes('function')) {
+                    comments.push({
+                        message: `Write tests that give you confidence. Test behavior, not implementation. Use Testing Library principles: test what users see and do, not internal component state.`,
+                        tone: 'encouraging',
+                        expertise: ['testing', 'user-focused'],
+                        context: 'testing'
+                    });
+                }
+                break;
+                
+            case 'tj':
+                if (pattern.includes('function') || pattern.includes('class')) {
+                    comments.push({
+                        message: `Keep APIs simple and intuitive. Good software feels natural to use. Consider the developer experience - how would you want to use this API?`,
+                        tone: 'encouraging',
+                        expertise: ['api-design', 'dx'],
+                        context: 'api-design'
+                    });
+                }
+                break;
+        }
+    }
+
+    private addArchitectureSpecificSuggestions(pattern: string, mentorData: any, comments: PersonalizedComment[]): void {
+        const { username, expertise, focusAreas, feedbackApproach } = mentorData;
+        
+        // Microservices Architecture Experts
+        if (expertise.includes('microservices') || expertise.includes('distributed-systems')) {
+            if (pattern.includes('class') || pattern.includes('function')) {
+                comments.push({
+                    message: `From a microservices perspective, ensure this ${pattern.includes('class') ? 'class' : 'function'} has a single responsibility. In distributed systems, clear boundaries prevent cascading failures.`,
+                    tone: 'analytical',
+                    expertise: ['microservices', 'architecture'],
+                    context: 'architecture'
+                });
+            }
+            if (pattern.includes('import') || pattern.includes('require')) {
+                comments.push({
+                    message: `Consider dependency injection here. In microservices, loose coupling between modules mirrors the loose coupling between services.`,
+                    tone: 'pragmatic',
+                    expertise: ['microservices', 'dependency-injection'],
+                    context: 'architecture'
+                });
+            }
+        }
+        
+        // Clean Architecture Advocates
+        if (expertise.includes('clean-architecture') || expertise.includes('solid-principles')) {
+            if (pattern.includes('class')) {
+                comments.push({
+                    message: `Apply SOLID principles here: Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, and Dependency Inversion. This class should have one reason to change.`,
+                    tone: 'analytical',
+                    expertise: ['clean-architecture', 'solid'],
+                    context: 'architecture'
+                });
+            }
+        }
+        
+        // Domain-Driven Design Experts
+        if (expertise.includes('domain-driven-design') || expertise.includes('ddd')) {
+            if (pattern.includes('class') || pattern.includes('function')) {
+                comments.push({
+                    message: `Think in terms of domain models. Does this ${pattern.includes('class') ? 'class' : 'function'} represent a clear domain concept? Align your code structure with business logic.`,
+                    tone: 'analytical',
+                    expertise: ['ddd', 'domain-modeling'],
+                    context: 'architecture'
+                });
+            }
+        }
+        
+        // Event-Driven Architecture
+        if (expertise.includes('event-driven') || expertise.includes('event-sourcing')) {
+            if (pattern.includes('async') || pattern.includes('Promise')) {
+                comments.push({
+                    message: `Consider event-driven patterns here. Instead of direct calls, think about publishing events and having subscribers react. This improves decoupling and scalability.`,
+                    tone: 'encouraging',
+                    expertise: ['event-driven', 'async'],
+                    context: 'architecture'
+                });
+            }
+        }
+    }
+    
+    private addStylingSpecificSuggestions(pattern: string, mentorData: any, comments: PersonalizedComment[]): void {
+        const { username, expertise, focusAreas, feedbackApproach } = mentorData;
+        
+        // Functional Programming Advocates
+        if (expertise.includes('functional-programming') || expertise.includes('fp')) {
+            if (pattern.includes('function') || pattern.includes('=>')) {
+                comments.push({
+                    message: `Embrace functional programming principles: immutability, pure functions, and higher-order functions. Avoid side effects and prefer function composition.`,
+                    tone: 'encouraging',
+                    expertise: ['functional-programming'],
+                    context: 'paradigm'
+                });
+            }
+            if (pattern.includes('map') || pattern.includes('filter') || pattern.includes('reduce')) {
+                comments.push({
+                    message: `Excellent use of functional array methods! Consider chaining these operations and using currying for more reusable, composable code.`,
+                    tone: 'encouraging',
+                    expertise: ['functional-programming'],
+                    context: 'paradigm'
+                });
+            }
+        }
+        
+        // Code Style Purists
+        if (focusAreas.includes('code-style') || expertise.includes('prettier') || expertise.includes('eslint')) {
+            if (pattern.includes('const') || pattern.includes('let')) {
+                comments.push({
+                    message: `Consistent code formatting is crucial. Use tools like Prettier and ESLint to enforce style automatically. Your future team will thank you.`,
+                    tone: 'pragmatic',
+                    expertise: ['code-style', 'tooling'],
+                    context: 'formatting'
+                });
+            }
+        }
+        
+        // Performance Optimization Experts
+        if (focusAreas.includes('performance') || expertise.includes('optimization')) {
+            if (pattern.includes('map') && pattern.includes('filter')) {
+                comments.push({
+                    message: `Performance tip: Chaining map() and filter() creates intermediate arrays. Consider using a single reduce() or a for-loop for better memory efficiency with large datasets.`,
+                    tone: 'analytical',
+                    expertise: ['performance', 'optimization'],
+                    context: 'performance'
+                });
+            }
+            if (pattern.includes('async') || pattern.includes('await')) {
+                comments.push({
+                    message: `Async performance matters! Use Promise.all() for parallel operations, avoid await in loops, and consider using streaming for large data sets.`,
+                    tone: 'analytical',
+                    expertise: ['performance', 'async'],
+                    context: 'performance'
+                });
+            }
+        }
+    }
+    
+    private addExpertiseSpecificSuggestions(pattern: string, mentorData: any, comments: PersonalizedComment[]): void {
+        const { username, expertise, focusAreas, feedbackApproach } = mentorData;
+        
+        // React Ecosystem Experts
+        if (expertise.includes('react') || expertise.includes('jsx')) {
             if (pattern.includes('useState') || pattern.includes('useEffect')) {
                 comments.push({
-                    message: `React hooks! Remember the rules of hooks - only call them at the top level, and use dependency arrays correctly in useEffect to avoid infinite re-renders.`,
+                    message: `React hooks best practices: Keep hooks at the top level, use custom hooks for reusable logic, and always include dependencies in useEffect arrays. Consider useMemo and useCallback for performance.`,
                     tone: 'analytical',
                     expertise: ['react', 'hooks'],
                     context: 'react'
                 });
             }
+            if (pattern.includes('Component') || pattern.includes('class')) {
+                comments.push({
+                    message: `Modern React favors functional components with hooks over class components. They're easier to test, have better performance, and align with React's future direction.`,
+                    tone: 'encouraging',
+                    expertise: ['react', 'modern-patterns'],
+                    context: 'react'
+                });
+            }
         }
-
-        return comments;
+        
+        // Node.js Backend Experts
+        if (expertise.includes('node.js') || expertise.includes('backend')) {
+            if (pattern.includes('require') || pattern.includes('import')) {
+                comments.push({
+                    message: `Node.js best practices: Use ES modules over CommonJS, implement proper error handling middleware, and consider using TypeScript for better type safety in large applications.`,
+                    tone: 'pragmatic',
+                    expertise: ['node.js', 'backend'],
+                    context: 'backend'
+                });
+            }
+            if (pattern.includes('async') || pattern.includes('Promise')) {
+                comments.push({
+                    message: `Node.js async patterns: Always handle promise rejections, use async/await over callbacks, and consider implementing circuit breakers for external service calls.`,
+                    tone: 'analytical',
+                    expertise: ['node.js', 'async'],
+                    context: 'backend'
+                });
+            }
+        }
+        
+        // Testing Advocates
+        if (expertise.includes('testing') || expertise.includes('tdd') || expertise.includes('jest')) {
+            if (pattern.includes('function') || pattern.includes('class')) {
+                comments.push({
+                    message: `Test-driven development approach: Write tests first, keep functions pure and testable, use dependency injection for mocking, and aim for high test coverage with meaningful assertions.`,
+                    tone: 'encouraging',
+                    expertise: ['testing', 'tdd'],
+                    context: 'testing'
+                });
+            }
+        }
+        
+        // Security Experts
+        if (focusAreas.includes('security') || expertise.includes('cybersecurity')) {
+            if (pattern.includes('innerHTML') || pattern.includes('eval')) {
+                comments.push({
+                    message: `Security alert! This pattern can lead to XSS vulnerabilities. Use textContent instead of innerHTML, avoid eval(), sanitize user inputs, and implement Content Security Policy headers.`,
+                    tone: 'direct',
+                    expertise: ['security', 'xss-prevention'],
+                    context: 'security'
+                });
+            }
+            if (pattern.includes('fetch') || pattern.includes('axios')) {
+                comments.push({
+                    message: `API security considerations: Implement proper authentication, use HTTPS, validate all inputs, implement rate limiting, and never expose sensitive data in client-side code.`,
+                    tone: 'analytical',
+                    expertise: ['security', 'api-security'],
+                    context: 'security'
+                });
+            }
+        }
+        
+        // DevOps/Infrastructure Experts
+        if (expertise.includes('devops') || expertise.includes('docker') || expertise.includes('kubernetes')) {
+            if (pattern.includes('import') && pattern.includes('config')) {
+                comments.push({
+                    message: `Infrastructure perspective: Externalize configuration, use environment variables, implement health checks, and ensure your code is container-ready with proper logging.`,
+                    tone: 'pragmatic',
+                    expertise: ['devops', 'configuration'],
+                    context: 'infrastructure'
+                });
+            }
+        }
     }
 
     private formatPersonalizedCodeReview(comment: PersonalizedComment, profile: MentorProfile): string {
