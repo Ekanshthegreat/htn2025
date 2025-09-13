@@ -37,34 +37,19 @@
         "category": "AI Mentor"
       },
       {
-        "command": "aiMentor.traceExecution",
-        "title": "Trace Code Execution",
+        "command": "aiMentor.createGitHubMentor",
+        "title": "🐙 Create GitHub-Based Mentor",
         "category": "AI Mentor"
       },
       {
         "command": "aiMentor.selectProfile",
         "title": "👤 Select Mentor Profile",
-        "category": "AI Mentor Profiles"
-      },
-      {
-        "command": "aiMentor.createProfile",
-        "title": "🚀 Create Mentor Profile",
-        "category": "AI Mentor Profiles"
-      },
-      {
-        "command": "aiMentor.createGitHubMentor",
-        "title": "🐙 Create GitHub-Based Mentor",
-        "category": "AI Mentor Profiles"
-      },
-      {
-        "command": "aiMentor.selectMentor",
-        "title": "🎭 Select Mentor Personality",
-        "category": "AI Mentor Profiles"
+        "category": "AI Mentor"
       },
       {
         "command": "aiMentor.manageProfiles",
         "title": "⚙️ Manage Profiles",
-        "category": "AI Mentor Profiles"
+        "category": "AI Mentor"
       }
     ],
     "views": {
@@ -146,7 +131,6 @@
         },
         "aiMentor.activeProfile": {
           "type": "string",
-          "default": "marcus",
           "description": "Currently active mentor profile ID"
         }
       }

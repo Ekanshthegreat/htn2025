@@ -62,7 +62,7 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
         this.updateWebview();
     }
 
-    private updateWebview() {
+    public updateWebview() {
         if (this._view) {
             this._view.webview.postMessage({
                 type: 'updateMessages',
@@ -75,16 +75,39 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                     const profiles = this.profileManager.getAllProfiles();
                     const activeProfile = this.profileManager.getActiveProfile();
                     
-                    console.log('Sending profiles to webview:', profiles.length, 'profiles');
-                    console.log('Active profile:', activeProfile?.name);
-                    console.log('Profiles data:', profiles.map(p => ({ id: p.id, name: p.name, githubUsername: p.githubUsername })));
+                    console.log('=== BACKEND PROFILE UPDATE ===');
+                    console.log('Total profiles found:', profiles.length);
+                    console.log('Active profile:', activeProfile?.name || 'None');
+                    
+                    if (profiles.length > 0) {
+                        console.log('Profile details:');
+                        profiles.forEach((profile, index) => {
+                            console.log(`  ${index + 1}. ${profile.name} (${profile.id}) - GitHub: ${profile.githubUsername || 'N/A'}`);
+                        });
+                    }
+                    
+                    const profilesForWebview = profiles.map(p => ({
+                        id: p.id,
+                        name: p.name,
+                        githubUsername: p.githubUsername,
+                        avatar: p.avatar,
+                        personality: p.personality,
+                        codeStylePreferences: p.codeStylePreferences,
+                        prompts: p.prompts,
+                        githubInsights: (p as any).githubInsights,
+                        lastUpdated: p.lastUpdated
+                    }));
+                    
+                    console.log('Sending to webview:', profilesForWebview);
                     
                     this._view.webview.postMessage({
                         type: 'updateProfiles',
-                        profiles: profiles,
+                        profiles: profilesForWebview,
                         activeProfileId: activeProfile?.id,
                         activeMentorName: activeProfile?.name || 'AI Mentor'
                     });
+                    
+                    console.log('=== END BACKEND PROFILE UPDATE ===');
                 } catch (error) {
                     console.error('Error updating webview with profiles:', error);
                 }
@@ -131,13 +154,23 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
 
     private createFallbackResponse(code: string, language: string): any {
         const activeProfile = this.profileManager?.getActiveProfile();
-        const mentorId = activeProfile?.id || 'marcus';
-        const mentorName = activeProfile?.name || 'AI Mentor';
         
-        // Pattern-based analysis with personality-specific responses
+        if (!activeProfile) {
+            return {
+                message: 'AI Mentor: No mentor profile available. Please create a GitHub-based mentor profile first.',
+                suggestions: ['Use the command palette to create a mentor from a GitHub profile'],
+                warnings: ['No active mentor profile found'],
+                type: 'warning'
+            };
+        }
+        
+        const mentorName = activeProfile.name;
+        const communicationStyle = activeProfile.personality.communicationStyle;
+        const feedbackApproach = activeProfile.personality.feedbackApproach;
+        
+        // Pattern-based analysis
         let suggestions = [];
         let warnings = [];
-        let message = '';
         
         // Analyze code patterns
         const hasConsoleLog = code.includes('console.log');
@@ -148,99 +181,32 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
         const hasComments = code.includes('//') || code.includes('/*');
         const lineCount = code.split('\n').length;
         
-        // Generate personality-specific responses
-        switch (mentorId) {
-            case 'marcus':
-                message = `${mentorName}: *cracks knuckles* Alright, let me tear this ${language} code apart...`;
-                
-                if (hasConsoleLog) {
-                    warnings.push("Console.log? Really? What is this, amateur hour? Use a proper logging framework!");
-                }
-                if (hasVar) {
-                    warnings.push("'var'? Did you time travel from 2010? Use 'let' or 'const' like a professional!");
-                }
-                if (hasLooseEquality) {
-                    warnings.push("Loose equality (==)? That's how bugs are born. Use === and save yourself the headache!");
-                }
-                if (!hasComments && lineCount > 10) {
-                    warnings.push("No comments? Good luck remembering what this mess does in 6 months!");
-                }
-                
-                if (warnings.length === 0) {
-                    suggestions.push("Fine, your code doesn't completely suck. But I'm watching you...");
-                } else {
-                    suggestions.push("Fix these rookie mistakes and maybe you'll write decent code someday.");
-                }
-                break;
-                
-            case 'sophia':
-                message = `${mentorName}: *adjusts glasses with a smirk* Oh, this ${language} code is... interesting. Let me guess what happened here...`;
-                
-                if (hasConsoleLog) {
-                    suggestions.push("Console.log everywhere? It's like leaving breadcrumbs, but less useful. Try a real logging library - your future self will thank you.");
-                }
-                if (hasVar) {
-                    suggestions.push("Using 'var'? How charmingly retro! It's like using Internet Explorer by choice. Let's upgrade to 'let' or 'const', shall we?");
-                }
-                if (hasLooseEquality) {
-                    warnings.push("Ah yes, loose equality - because who needs predictable behavior? Use === unless you enjoy debugging mysterious type coercion bugs.");
-                }
-                if (hasArrowFunctions) {
-                    suggestions.push("Nice arrow functions! At least someone's keeping up with modern JavaScript. Gold star for you! ⭐");
-                }
-                
-                if (warnings.length === 0 && suggestions.length <= 1) {
-                    suggestions.push("Well well, look who actually knows how to write decent code. Color me impressed! 💅");
-                }
-                break;
-                
-            case 'alex':
-                message = `${mentorName}: OMG! 🌟 Your ${language} code is SO COOL! I'm literally bouncing with excitement to help you make it even MORE AMAZING!`;
-                
-                if (hasConsoleLog) {
-                    suggestions.push("I LOVE that you're debugging with console.log! 🐛 For production, maybe we could try a fancy logging library? It'll be AWESOME!");
-                }
-                if (hasVar) {
-                    suggestions.push("Ooh, 'var'! Classic choice! 💫 But 'let' and 'const' are like the cool new kids - they have better scoping superpowers! ✨");
-                }
-                if (hasLooseEquality) {
-                    suggestions.push("Loose equality is fun, but strict equality (===) is like a superhero cape for your code! 🦸‍♂️ It prevents sneaky bugs!");
-                }
-                if (hasAsync) {
-                    suggestions.push("ASYNC CODE! 🚀 You're handling asynchronous operations like a CHAMPION! This is so exciting!");
-                }
-                if (hasComments) {
-                    suggestions.push("YES! Comments! 📝 You're documenting your brilliant thoughts! Future you is going to be SO grateful!");
-                }
-                
-                if (suggestions.length === 0) {
-                    suggestions.push("This code is FANTASTIC! 🎉 You're doing AMAZING work! Keep being the coding superstar you are! ⭐✨🌟");
-                }
-                break;
-                
-            default:
-                message = `${mentorName}: I've analyzed your ${language} code. Here's what I found:`;
-                if (hasConsoleLog) suggestions.push('Consider using a proper logging library for production code');
-                if (hasVar) suggestions.push('Use let or const instead of var for better scoping');
-                if (hasLooseEquality) warnings.push('Use strict equality (===) instead of loose equality (==)');
+        // Generate suggestions based on GitHub profile personality
+        if (hasConsoleLog) {
+            suggestions.push(this.formatSuggestionByStyle('Consider using a proper logging library for production code', communicationStyle, feedbackApproach));
+        }
+        if (hasVar) {
+            suggestions.push(this.formatSuggestionByStyle('Use let or const instead of var for better scoping', communicationStyle, feedbackApproach));
+        }
+        if (hasLooseEquality) {
+            warnings.push(this.formatSuggestionByStyle('Use strict equality (===) instead of loose equality (==)', communicationStyle, feedbackApproach));
+        }
+        if (hasArrowFunctions && feedbackApproach === 'encouraging') {
+            suggestions.push('Great use of arrow functions! Modern JavaScript practices.');
+        }
+        if (hasAsync && activeProfile.personality.expertise.includes('node.js')) {
+            suggestions.push('Good async/await usage. Consider error handling patterns.');
+        }
+        if (!hasComments && lineCount > 10) {
+            suggestions.push(this.formatSuggestionByStyle('Consider adding comments for better code documentation', communicationStyle, feedbackApproach));
         }
         
         // Ensure we always have at least one suggestion
         if (suggestions.length === 0 && warnings.length === 0) {
-            switch (mentorId) {
-                case 'marcus':
-                    suggestions.push("Your code doesn't make me want to throw my computer out the window. That's... progress.");
-                    break;
-                case 'sophia':
-                    suggestions.push("Well, this is refreshingly competent. I was expecting much worse, honestly.");
-                    break;
-                case 'alex':
-                    suggestions.push("Your code is PERFECT and BEAUTIFUL and makes me so HAPPY! 🌈✨💖");
-                    break;
-                default:
-                    suggestions.push('Your code looks clean! Keep up the good work.');
-            }
+            suggestions.push(this.formatSuggestionByStyle('Your code looks clean! Keep up the good work.', communicationStyle, feedbackApproach));
         }
+        
+        const message = `${mentorName}: I've analyzed your ${language} code based on my GitHub profile analysis. Here's what I found:`;
         
         return {
             message,
@@ -252,43 +218,24 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
 
     private createErrorResponse(error: any): any {
         const activeProfile = this.profileManager?.getActiveProfile();
-        const mentorId = activeProfile?.id || 'marcus';
         const mentorName = activeProfile?.name || 'AI Mentor';
+        const communicationStyle = activeProfile?.personality?.communicationStyle || 'supportive';
         
-        let message = '';
-        let suggestions = [];
+        let message = `${mentorName}: I'm having trouble analyzing your code right now.`;
+        let suggestions = [
+            'Check your API key in VS Code settings',
+            'Ensure you have internet connectivity',
+            'Try again in a moment'
+        ];
         
-        switch (mentorId) {
-            case 'marcus':
-                message = `${mentorName}: Great. Just great. My AI brain is having a meltdown. This is what happens when you rely on technology!`;
-                suggestions = [
-                    'Check your API key - probably misconfigured like everything else',
-                    'Make sure you have internet - basic stuff, really',
-                    'Try again, but lower your expectations'
-                ];
-                break;
-                
-            case 'sophia':
-                message = `${mentorName}: *rolls eyes* Oh wonderful, the AI is having an existential crisis. How very... predictable.`;
-                suggestions = [
-                    'Check your API key in settings - it\'s probably as confused as this error message',
-                    'Verify internet connectivity - because apparently that\'s still a thing we need to do',
-                    'Try again when the digital gods are feeling more cooperative'
-                ];
-                break;
-                
-            case 'alex':
-                message = `${mentorName}: Oopsie! 😅 I'm having a tiny technical hiccup! But don't worry - we'll get through this TOGETHER! 💪✨`;
-                suggestions = [
-                    'Let\'s check that API key in VS Code settings! It\'ll be an adventure! 🔑',
-                    'Make sure you\'re connected to the internet - we need those digital highways! 🌐',
-                    'Try again! I believe in us! We\'ve got this! 🚀💖'
-                ];
-                break;
-                
-            default:
-                message = `${mentorName}: Sorry, I'm having trouble analyzing your code right now. Please check your API configuration and try again.`;
-                suggestions = ['Check your API key in VS Code settings', 'Ensure you have internet connectivity'];
+        // Adjust message tone based on GitHub profile communication style
+        if (communicationStyle === 'direct') {
+            message = `${mentorName}: API error occurred. Check your configuration.`;
+        } else if (communicationStyle === 'detailed') {
+            message = `${mentorName}: I encountered a technical issue while processing your request. This typically indicates a configuration or connectivity problem.`;
+            suggestions.push('Review the error details below for more information');
+        } else if (communicationStyle === 'supportive') {
+            message = `${mentorName}: Don't worry, I'm having a small technical hiccup. Let's troubleshoot this together.`;
         }
         
         return {
@@ -297,6 +244,24 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
             warnings: [`Error: ${error.message || 'Unknown error'}`],
             type: 'warning'
         };
+    }
+
+    private formatSuggestionByStyle(baseSuggestion: string, communicationStyle: string, feedbackApproach: string): string {
+        switch (communicationStyle) {
+            case 'direct':
+                return baseSuggestion;
+            case 'detailed':
+                return `${baseSuggestion} This will improve code maintainability and reduce potential issues.`;
+            case 'supportive':
+                if (feedbackApproach === 'encouraging') {
+                    return `Great progress! ${baseSuggestion} to make your code even better.`;
+                }
+                return `Consider this improvement: ${baseSuggestion}`;
+            case 'concise':
+                return baseSuggestion.split('.')[0]; // Take first sentence only
+            default:
+                return baseSuggestion;
+        }
     }
 
     private sendErrorToWebview(message: string) {
@@ -337,9 +302,9 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                         <h2 id="mentorTitle">🤖 AI Mentor</h2>
                         <div class="header-controls">
                             <select id="mentorSelect" class="mentor-dropdown">
-                                <option value="marcus">💀 Marcus "The Hammer" - Brutally Honest</option>
-                                <option value="sophia">😏 Sophia "Sass" - Sarcastic Genius</option>
-                                <option value="alex">🌟 Alex "Sunshine" - Overwhelmingly Positive</option>
+                                ${this.profileManager.getAvailableMentors().map(mentor => {
+                                    return `<option value="${mentor.id}" ${mentor.id === this.profileManager.activeProfileId ? 'selected' : ''}>${mentor.name}</option>`;
+                                }).join('')}
                             </select>
                             <button id="clearBtn" class="btn btn-secondary">Clear</button>
                         </div>
@@ -353,13 +318,15 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                     <div id="messages" class="messages-container">
                         <div class="welcome-message">
                             <h3>👋 Welcome to AI Mentor!</h3>
-                            <p>Your AI mentor will provide real-time guidance as you code. Switch mentors using the dropdown above:</p>
-                            <ul>
-                                <li>💀 <strong>Marcus:</strong> Harsh but accurate - will tear your code apart to make you better</li>
-                                <li>😏 <strong>Sophia:</strong> Witty and sarcastic - uses humor to teach better coding</li>
-                                <li>🌟 <strong>Alex:</strong> Super positive - finds the good in everything you write</li>
-                            </ul>
-                            <p>Start coding and your selected mentor will begin helping!</p>
+                            <p>Create personalized mentors based on GitHub profiles to get tailored coding guidance.</p>
+                            <div class="setup-instructions">
+                                <h4>🚀 Getting Started:</h4>
+                                <ol>
+                                    <li>Use the Command Palette (Ctrl+Shift+P) and search for "AI Mentor: Create GitHub Profile"</li>
+                                    <li>Enter a GitHub username to analyze their coding style and expertise</li>
+                                    <li>Your new mentor will provide personalized feedback based on their profile</li>
+                                </ol>
+                            </div>
                         </div>
                     </div>
 

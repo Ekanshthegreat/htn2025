@@ -46,16 +46,20 @@ export class RealtimeAnalyzer {
 
         this.setupEventListeners();
         
-        // Show initial greeting from active mentor
+        // Show initial greeting from active mentor if available
         const activeProfile = this.profileManager.getActiveProfile();
-        vscode.window.showInformationMessage(`🤖 ${activeProfile.name}: Ready to help you code better!`);
+        if (activeProfile) {
+            vscode.window.showInformationMessage(`🤖 ${activeProfile.name}: Ready to help you code better!`);
+        } else {
+            vscode.window.showInformationMessage('🤖 AI Mentor: Please create a GitHub-based mentor profile to get started!');
+        }
         
         // Debug: Log that analyzer is initialized
         console.log('🔧 AI Mentor: Real-time analyzer initialized and ready!');
         
-        // Immediately analyze current document if one is open
+        // Immediately analyze current document if one is open and we have a profile
         const activeEditor = vscode.window.activeTextEditor;
-        if (activeEditor) {
+        if (activeEditor && activeProfile) {
             setTimeout(() => {
                 this.runImmediateTest(activeEditor);
             }, 1000);
@@ -527,18 +531,30 @@ export class RealtimeAnalyzer {
     public enable() {
         this.isEnabled = true;
         const activeProfile = this.profileManager?.getActiveProfile();
-        vscode.window.showInformationMessage(
-            `⚡ ${activeProfile?.name || 'AI Mentor'}: Real-time analysis is now ENABLED! Let's create some brilliant code together!`
-        );
+        if (activeProfile) {
+            vscode.window.showInformationMessage(
+                `⚡ ${activeProfile.name}: Real-time analysis is now ENABLED! Let's create some brilliant code together!`
+            );
+        } else {
+            vscode.window.showInformationMessage(
+                `⚡ AI Mentor: Real-time analysis ENABLED! Please create a GitHub-based mentor profile for personalized guidance.`
+            );
+        }
     }
 
     public disable() {
         this.isEnabled = false;
         this.diagnosticCollection.clear();
         const activeProfile = this.profileManager?.getActiveProfile();
-        vscode.window.showInformationMessage(
-            `🔧 ${activeProfile?.name || 'AI Mentor'}: Real-time analysis DISABLED. I'll be here when you need my insights again!`
-        );
+        if (activeProfile) {
+            vscode.window.showInformationMessage(
+                `🔧 ${activeProfile.name}: Real-time analysis DISABLED. I'll be here when you need my insights again!`
+            );
+        } else {
+            vscode.window.showInformationMessage(
+                `🔧 AI Mentor: Real-time analysis DISABLED.`
+            );
+        }
     }
 
     private trackUserAction(action: string, context?: any) {
@@ -586,42 +602,40 @@ export class RealtimeAnalyzer {
         if (this.profileManager) {
             const activeProfile = this.profileManager.getActiveProfile();
             if (activeProfile && activeProfile.prompts) {
-                // Transform the message using the mentor's style
-                return this.getMentorStyledMessage(originalMessage, activeProfile);
+                // Transform the message using the mentor's GitHub-based personality
+                return this.formatMessageForGitHubProfile(originalMessage, activeProfile);
             }
         }
         
-        if (!behaviorAnalysis) return originalMessage;
-
-        const empathyScore = behaviorAnalysis.empathyScore;
-        const approach = behaviorAnalysis.suggestedApproach;
-        const sentiment = behaviorAnalysis.sentiment;
-
-        // High empathy needed - be very supportive
-        if (empathyScore > 70 || behaviorAnalysis.emotionalState === 'frustrated' || behaviorAnalysis.emotionalState === 'confused') {
-            return `💙 I understand this can be challenging. ${originalMessage} Take your time - you're doing great!`;
-        }
-
-        // Medium empathy - be encouraging
-        if (empathyScore > 40 || approach === 'encouraging') {
-            return `✨ ${originalMessage} Keep up the excellent work!`;
-        }
-
-        // Low empathy - be direct but positive
-        if (approach === 'direct') {
-            return `⚡ ${originalMessage}`;
-        }
-
-        // Patient approach
-        if (approach === 'patient') {
-            return `🌱 Let's work through this step by step. ${originalMessage} No rush!`;
-        }
-
+        // Fallback to basic message if no profile available
         return originalMessage;
+    }
+
+    private formatMessageForGitHubProfile(message: string, profile: any): string {
+        const style = profile.personality.communicationStyle;
+        const approach = profile.personality.feedbackApproach;
+        
+        switch (style) {
+            case 'direct':
+                return message;
+            case 'detailed':
+                return `${message} This aligns with best practices in ${profile.personality.expertise.join(', ')}.`;
+            case 'supportive':
+                if (approach === 'encouraging') {
+                    return `Great work! ${message} Keep building on this foundation.`;
+                }
+                return `I'd suggest: ${message}`;
+            case 'concise':
+                return message.split('.')[0]; // Take first sentence only
+            default:
+                return message;
+        }
     }
 
     private applyMentorPersonality(diagnostics: vscode.Diagnostic[]) {
         const activeProfile = this.profileManager.getActiveProfile();
+        
+        if (!activeProfile) return; // Skip if no profile available
         
         diagnostics.forEach(diagnostic => {
             if (diagnostic.message && !diagnostic.message.includes(activeProfile.name)) {
@@ -634,7 +648,11 @@ export class RealtimeAnalyzer {
     private formatMentorMessage(message: string, type: 'suggestion' | 'warning' | 'encouragement', profile: any): string {
         const icon = type === 'warning' ? '⚠️' : type === 'encouragement' ? '💡' : '🔧';
         
-        // Use the mentor's communication style to format the message
+        if (!profile) {
+            return `${icon} AI Mentor: ${message}`;
+        }
+        
+        // Use the GitHub profile's communication style to format the message
         switch (profile.personality.communicationStyle) {
             case 'direct':
                 return `${icon} ${profile.name}: ${message}`;

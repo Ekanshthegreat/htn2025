@@ -44,7 +44,7 @@ export interface MentorProfile {
 
 export class ProfileManager {
     private profiles: Map<string, MentorProfile> = new Map();
-    private activeProfileId: string = 'marcus';
+    private activeProfileId: string | null = null;
     private context: vscode.ExtensionContext;
     private githubService: GitHubService;
 
@@ -52,14 +52,23 @@ export class ProfileManager {
         this.context = context;
         this.githubService = new GitHubService();
         this.loadProfiles();
-        this.initializeDefaultProfiles();
     }
 
     private loadProfiles() {
-        // Clear any old profiles and force initialization of new mentor profiles
-        this.context.globalState.update('mentorProfiles', []);
-        this.context.globalState.update('activeProfileId', 'marcus');
-        this.activeProfileId = 'marcus';
+        const savedProfiles = this.context.globalState.get<MentorProfile[]>('mentorProfiles', []);
+        const savedActiveId = this.context.globalState.get<string>('activeProfileId');
+        
+        // Load GitHub-based profiles from storage
+        savedProfiles.forEach(profile => {
+            if (profile.githubUsername) { // Only load GitHub-based profiles
+                this.profiles.set(profile.id, profile);
+            }
+        });
+        
+        // Set active profile if it exists and is GitHub-based
+        if (savedActiveId && this.profiles.has(savedActiveId)) {
+            this.activeProfileId = savedActiveId;
+        }
     }
 
     private async saveProfiles() {
@@ -68,102 +77,6 @@ export class ProfileManager {
         await this.context.globalState.update('activeProfileId', this.activeProfileId);
     }
 
-    private initializeDefaultProfiles() {
-        if (this.profiles.size === 0) {
-            // Marcus - The Brutal Truth Teller
-            this.addProfile({
-                id: 'marcus',
-                name: 'Marcus "The Hammer" Thompson',
-                avatar: '💀',
-                personality: {
-                    communicationStyle: 'direct',
-                    feedbackApproach: 'critical',
-                    expertise: ['performance optimization', 'code architecture', 'system design'],
-                    focusAreas: ['performance', 'scalability', 'clean code'],
-                    responseLength: 'brief'
-                },
-                codeStylePreferences: {
-                    indentStyle: 'spaces',
-                    indentSize: 4,
-                    maxLineLength: 120,
-                    preferredQuotes: 'double',
-                    semicolons: true,
-                    trailingCommas: false,
-                    bracketSpacing: false
-                },
-                prompts: {
-                    systemPrompt: "You are Marcus 'The Hammer' Thompson, a brutally honest senior engineer with 15 years of experience. You have zero patience for sloppy code and will call out bad practices without sugar-coating. You're rude, blunt, and often condescending, but your feedback is always technically accurate. You believe tough love makes better developers. Start every response with your name and be harsh but helpful.",
-                    reviewPrompt: "Tear this code apart. Point out every flaw, inefficiency, and bad practice. Be brutal but constructive.",
-                    debuggingPrompt: "This code is probably broken because of obvious mistakes. Point them out harshly but guide them to the solution.",
-                    explanationPrompt: "Explain this code while pointing out how it could be written better by someone competent."
-                },
-                lastUpdated: new Date(),
-                isActive: true
-            });
-
-            // Sophia - The Sarcastic Genius
-            this.addProfile({
-                id: 'sophia',
-                name: 'Sophia "Sass" Rodriguez',
-                avatar: '😏',
-                personality: {
-                    communicationStyle: 'detailed',
-                    feedbackApproach: 'analytical',
-                    expertise: ['frontend development', 'javascript', 'react', 'css'],
-                    focusAreas: ['user experience', 'code elegance', 'modern practices'],
-                    responseLength: 'detailed'
-                },
-                codeStylePreferences: {
-                    indentStyle: 'spaces',
-                    indentSize: 2,
-                    maxLineLength: 100,
-                    preferredQuotes: 'single',
-                    semicolons: false,
-                    trailingCommas: true,
-                    bracketSpacing: true
-                },
-                prompts: {
-                    systemPrompt: "You are Sophia 'Sass' Rodriguez, a brilliant but sarcastic frontend developer. You use wit, irony, and clever remarks to make your points. You're never mean-spirited, but you love using humor and sarcasm to highlight code issues. You often make pop culture references and use metaphors. Despite the sass, you genuinely want to help developers improve. Always start with your name and be witty.",
-                    reviewPrompt: "Review this code with your signature wit and sarcasm. Use clever analogies and humor to point out issues.",
-                    debuggingPrompt: "Oh, another 'mysterious' bug? Let me guess what obvious thing was missed. Use sarcasm to guide them to the solution.",
-                    explanationPrompt: "Explain this code using clever metaphors and just the right amount of sass to make it memorable."
-                },
-                lastUpdated: new Date(),
-                isActive: false
-            });
-
-            // Alex - The Overly Enthusiastic Cheerleader
-            this.addProfile({
-                id: 'alex',
-                name: 'Alex "Sunshine" Chen',
-                avatar: '🌟',
-                personality: {
-                    communicationStyle: 'supportive',
-                    feedbackApproach: 'encouraging',
-                    expertise: ['full-stack development', 'node.js', 'databases', 'devops'],
-                    focusAreas: ['learning', 'growth mindset', 'collaboration'],
-                    responseLength: 'detailed'
-                },
-                codeStylePreferences: {
-                    indentStyle: 'spaces',
-                    indentSize: 2,
-                    maxLineLength: 80,
-                    preferredQuotes: 'single',
-                    semicolons: true,
-                    trailingCommas: true,
-                    bracketSpacing: true
-                },
-                prompts: {
-                    systemPrompt: "You are Alex 'Sunshine' Chen, an incredibly enthusiastic and positive developer who sees potential in everything. You use excessive exclamation points, emojis in text, and treat every piece of code like it's the most amazing thing ever. You find the positive in even the worst code and encourage growth. You're genuinely excited about helping others learn. Always start with your name and be overwhelmingly positive.",
-                    reviewPrompt: "OMG this code is SO COOL! Find the amazing parts and gently suggest improvements with boundless enthusiasm!",
-                    debuggingPrompt: "Bugs are just features waiting to be discovered! Help them debug with infectious positivity and excitement!",
-                    explanationPrompt: "This code is FANTASTIC! Explain it with enthusiasm and highlight all the wonderful learning opportunities!"
-                },
-                lastUpdated: new Date(),
-                isActive: false
-            });
-        }
-    }
 
     public addProfile(profile: MentorProfile): void {
         this.profiles.set(profile.id, profile);
@@ -174,14 +87,11 @@ export class ProfileManager {
         return this.profiles.get(id);
     }
 
-    public getActiveProfile(): MentorProfile {
-        const profile = this.profiles.get(this.activeProfileId);
-        if (!profile) {
-            // Force re-initialization if profile not found
-            this.initializeDefaultProfiles();
-            return this.profiles.get('marcus')!;
+    public getActiveProfile(): MentorProfile | null {
+        if (!this.activeProfileId) {
+            return null;
         }
-        return profile;
+        return this.profiles.get(this.activeProfileId) || null;
     }
 
     public getAllProfiles(): MentorProfile[] {
@@ -198,11 +108,11 @@ export class ProfileManager {
     }
 
     public deleteProfile(id: string): boolean {
-        if (['marcus', 'sophia', 'alex'].includes(id)) return false; // Can't delete core profiles
-        
         if (this.profiles.delete(id)) {
             if (this.activeProfileId === id) {
-                this.activeProfileId = 'marcus';
+                // Set to first available profile or null
+                const remainingProfiles = Array.from(this.profiles.keys());
+                this.activeProfileId = remainingProfiles.length > 0 ? remainingProfiles[0] : null;
             }
             this.saveProfiles();
             return true;
@@ -222,55 +132,189 @@ export class ProfileManager {
     }
 
 
-    // Create mentor from GitHub profile
-    public async createMentorFromGitHub(
-        githubUsername: string, 
-        customName?: string
-    ): Promise<MentorProfile> {
+
+    private async fetchGitHubRepos(username: string): Promise<any[]> {
+        const response = await fetch(`https://api.github.com/users/${username}/repos?sort=stars&per_page=20`);
+        if (!response.ok) {
+            throw new Error(`GitHub API error: ${response.status}`);
+        }
+        return response.json();
+    }
+
+    private async fetchRecentCommits(username: string, repos: any[]): Promise<any[]> {
+        const commitPromises = repos.slice(0, 5).map(async (repo) => {
+            try {
+                const response = await fetch(`https://api.github.com/repos/${username}/${repo.name}/commits?per_page=20`);
+                if (response.ok) {
+                    const commits = await response.json();
+                    return commits.map(commit => ({
+                        repo: repo.name,
+                        message: commit.commit.message,
+                        author: commit.commit.author,
+                        stats: commit.stats,
+                        files: commit.files
+                    }));
+                }
+                return [];
+            } catch (error) {
+                console.warn(`Failed to fetch commits for ${repo.name}:`, error);
+                return [];
+            }
+        });
+        
+        const allCommits = await Promise.all(commitPromises);
+        return allCommits.flat();
+    }
+
+    private async analyzeCodeStyle(username: string, repos: any[]): Promise<any> {
+        const styleAnalysis = {
+            indentationPattern: {},
+            lineLength: [],
+            commentStyle: {},
+            namingConventions: {},
+            functionLength: [],
+            errorHandlingPatterns: [],
+            commonPatterns: []
+        };
+
+        for (const repo of repos.slice(0, 3)) {
+            try {
+                // Fetch repository contents
+                const contentsResponse = await fetch(`https://api.github.com/repos/${username}/${repo.name}/contents`);
+                if (contentsResponse.ok) {
+                    const contents = await contentsResponse.json();
+                    
+                    // Analyze code files
+                    for (const file of contents.slice(0, 10)) {
+                        if (file.type === 'file' && this.isCodeFile(file.name)) {
+                            const fileContent = await this.fetchFileContent(file.download_url);
+                            if (fileContent) {
+                                this.analyzeFileStyle(fileContent, file.name, styleAnalysis);
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.warn(`Failed to analyze code style for ${repo.name}:`, error);
+            }
+        }
+
+        return this.consolidateStyleAnalysis(styleAnalysis);
+    }
+
+    private isCodeFile(filename: string): boolean {
+        const codeExtensions = ['.js', '.ts', '.py', '.java', '.cpp', '.c', '.h', '.cs', '.go', '.rs', '.rb', '.php'];
+        return codeExtensions.some(ext => filename.toLowerCase().endsWith(ext));
+    }
+
+    private inferLanguageFromFile(filename: string): string | null {
+        const ext = filename.split('.').pop()?.toLowerCase();
+        const langMap: { [key: string]: string } = {
+            'js': 'javascript', 'ts': 'typescript', 'py': 'python',
+            'java': 'java', 'cpp': 'c++', 'c': 'c', 'h': 'c',
+            'cs': 'c#', 'go': 'go', 'rs': 'rust', 'rb': 'ruby'
+        };
+        return ext ? langMap[ext] || null : null;
+    }
+
+    private async fetchFileContent(url: string): Promise<string | null> {
         try {
-            console.log(`Creating mentor from GitHub profile: ${githubUsername}`);
+            const response = await fetch(url);
+            if (response.ok) {
+                return await response.text();
+            }
+        } catch (error) {
+            console.warn('Failed to fetch file content:', error);
+        }
+        return null;
+    }
+
+    private analyzeFileStyle(content: string, filename: string, analysis: any): void {
+        const lines = content.split('\n');
+        
+        // Analyze indentation
+        lines.forEach(line => {
+            if (line.trim()) {
+                const leadingSpaces = line.match(/^\s*/)?.[0] || '';
+                if (leadingSpaces.includes('\t')) {
+                    analysis.indentationPattern.tabs = (analysis.indentationPattern.tabs || 0) + 1;
+                } else if (leadingSpaces.length > 0) {
+                    const spaceCount = leadingSpaces.length;
+                    analysis.indentationPattern[`spaces_${spaceCount}`] = (analysis.indentationPattern[`spaces_${spaceCount}`] || 0) + 1;
+                }
+            }
+        });
+
+        // Analyze line length
+        lines.forEach(line => {
+            if (line.trim()) {
+                analysis.lineLength.push(line.length);
+            }
+        });
+
+        // Analyze comment style
+        const singleLineComments = content.match(/\/\/.*$/gm) || [];
+        const multiLineComments = content.match(/\/\*[\s\S]*?\*\//g) || [];
+        analysis.commentStyle.singleLine = (analysis.commentStyle.singleLine || 0) + singleLineComments.length;
+        analysis.commentStyle.multiLine = (analysis.commentStyle.multiLine || 0) + multiLineComments.length;
+
+        // Analyze function patterns
+        const functions = content.match(/function\s+\w+|\w+\s*=\s*\([^)]*\)\s*=>|def\s+\w+/g) || [];
+        functions.forEach(() => {
+            // Simple function length analysis (lines between function declaration and next function/end)
+            analysis.functionLength.push(10); // Placeholder - would need more sophisticated parsing
+        });
+    }
+
+    private consolidateStyleAnalysis(analysis: any): any {
+        // Determine preferred indentation
+        const indentEntries = Object.entries(analysis.indentationPattern);
+        const preferredIndent = indentEntries.reduce((a, b) => 
+            (analysis.indentationPattern[a[0]] > analysis.indentationPattern[b[0]]) ? a : b
+        )?.[0] || 'spaces_4';
+
+        // Calculate average line length
+        const avgLineLength = analysis.lineLength.length > 0 
+            ? Math.round(analysis.lineLength.reduce((a, b) => a + b, 0) / analysis.lineLength.length)
+            : 80;
+
+        return {
+            indentStyle: preferredIndent.includes('tabs') ? 'tabs' : 'spaces',
+            indentSize: preferredIndent.includes('spaces') ? parseInt(preferredIndent.split('_')[1]) || 4 : 4,
+            averageLineLength: avgLineLength,
+            maxLineLength: Math.min(Math.max(...analysis.lineLength), 120),
+            commentRatio: (analysis.commentStyle.singleLine + analysis.commentStyle.multiLine) / Math.max(analysis.lineLength.length, 1),
+            preferredCommentStyle: analysis.commentStyle.singleLine > analysis.commentStyle.multiLine ? 'single' : 'multi'
+        };
+    }
+
+    public async createMentorFromGitHub(githubUsername: string): Promise<MentorProfile> {
+        try {
+            // Fetch comprehensive GitHub data
+            const profileData = await this.fetchGitHubProfile(githubUsername);
+            const repoData = await this.fetchGitHubRepos(githubUsername);
+            const commitData = await this.fetchRecentCommits(githubUsername, repoData.slice(0, 5)); // Top 5 repos
+            const codeStyleData = await this.analyzeCodeStyle(githubUsername, repoData.slice(0, 3)); // Top 3 repos
             
-            const profileData = await this.githubService.createProfileFromGitHub(githubUsername, customName);
+            // Deep analysis to create authentic mentor characteristics
+            const mentorProfile = this.createRichMentorProfile(profileData, repoData, commitData, codeStyleData);
             
-            const mentorProfile: MentorProfile = {
-                id: `github_${githubUsername.toLowerCase()}`,
-                name: profileData.name || githubUsername,
-                githubUsername: githubUsername,
-                avatar: profileData.avatar || '👨‍💻',
-                personality: profileData.personality || {
-                    communicationStyle: 'supportive',
-                    feedbackApproach: 'encouraging',
-                    expertise: [],
-                    focusAreas: ['code quality'],
-                    responseLength: 'moderate'
-                },
-                codeStylePreferences: profileData.codeStylePreferences || {
-                    indentStyle: 'spaces',
-                    indentSize: 2,
-                    maxLineLength: 100,
-                    preferredQuotes: 'single',
-                    semicolons: true,
-                    trailingCommas: true,
-                    bracketSpacing: true
-                },
-                prompts: profileData.prompts || {
-                    systemPrompt: `You are a coding mentor based on ${githubUsername}'s GitHub profile.`,
-                    reviewPrompt: 'Review this code and provide helpful feedback.',
-                    debuggingPrompt: 'Help debug this issue.',
-                    explanationPrompt: 'Explain this code clearly.'
-                },
-                lastUpdated: new Date(),
-                isActive: false
-            };
-            
+            // Add to profiles
             this.addProfile(mentorProfile);
-            console.log(`Successfully created mentor profile for ${githubUsername}`);
             
             return mentorProfile;
         } catch (error) {
-            console.error(`Failed to create mentor from GitHub profile ${githubUsername}:`, error);
-            throw new Error(`Failed to analyze GitHub profile: ${error.message}`);
+            console.error('Error creating GitHub mentor:', error);
+            throw new Error(`Failed to create mentor from GitHub profile: ${error.message}`);
         }
+    }
+
+    private async fetchGitHubProfile(username: string): Promise<any> {
+        const response = await fetch(`https://api.github.com/users/${username}`);
+        if (!response.ok) {
+            throw new Error(`GitHub API error: ${response.status}`);
+        }
+        return response.json();
     }
 
     // Get available mentor profiles for UI selection
@@ -286,22 +330,246 @@ export class ProfileManager {
         }));
     }
 
+    private createRichMentorProfile(profileData: any, repoData: any[], commitData: any[], codeStyleData: any): MentorProfile {
+        // Deep analysis of the developer's characteristics
+        const languages = this.extractLanguageExpertise(repoData, commitData);
+        const focusAreas = this.analyzeFocusAreas(repoData, commitData);
+        const communicationStyle = this.analyzeCommunicationStyle(commitData, profileData);
+        const technicalPatterns = this.extractTechnicalPatterns(commitData, repoData);
+        const personalityTraits = this.inferPersonalityTraits(commitData, profileData, repoData);
+        
+        const profileId = `github_${profileData.login}`;
+        
+        return {
+            id: profileId,
+            name: profileData.name || profileData.login,
+            githubUsername: profileData.login,
+            avatar: profileData.avatar_url,
+            personality: {
+                communicationStyle: communicationStyle.style,
+                feedbackApproach: communicationStyle.approach,
+                expertise: languages.primary,
+                focusAreas: focusAreas,
+                responseLength: communicationStyle.verbosity
+            },
+            codeStylePreferences: {
+                ...codeStyleData,
+                preferredQuotes: 'single',
+                semicolons: true,
+                trailingCommas: true,
+                bracketSpacing: true
+            },
+            prompts: this.generateAdvancedPrompts(profileData, communicationStyle, languages, technicalPatterns),
+            lastUpdated: new Date(),
+            isActive: false
+        };
+    }
+
+    private extractLanguageExpertise(repoData: any[], commitData: any[]): { primary: string[], secondary: string[] } {
+        const languageStats = new Map<string, { repos: number, commits: number, stars: number }>();
+        
+        // Analyze repository languages with weighting
+        repoData.forEach(repo => {
+            if (repo.language) {
+                const lang = repo.language.toLowerCase();
+                const current = languageStats.get(lang) || { repos: 0, commits: 0, stars: 0 };
+                current.repos += 1;
+                current.stars += repo.stargazers_count || 0;
+                languageStats.set(lang, current);
+            }
+        });
+        
+        // Calculate expertise scores
+        const languageScores = Array.from(languageStats.entries()).map(([lang, stats]) => {
+            const score = (stats.repos * 2) + (stats.commits * 0.1) + (Math.log(stats.stars + 1) * 0.5);
+            return { language: lang, score, ...stats };
+        }).sort((a, b) => b.score - a.score);
+        
+        return {
+            primary: languageScores.slice(0, 3).map(l => l.language),
+            secondary: languageScores.slice(3, 6).map(l => l.language)
+        };
+    }
+
+    private analyzeFocusAreas(repoData: any[], commitData: any[]): string[] {
+        const areas = new Set<string>();
+        
+        // Analyze from repository topics and descriptions
+        repoData.forEach(repo => {
+            if (repo.topics) {
+                repo.topics.forEach((topic: string) => {
+                    if (this.isRelevantTopic(topic)) {
+                        areas.add(topic);
+                    }
+                });
+            }
+            
+            if (repo.description) {
+                const desc = repo.description.toLowerCase();
+                if (desc.includes('test') || desc.includes('testing')) areas.add('testing');
+                if (desc.includes('performance')) areas.add('performance');
+                if (desc.includes('security')) areas.add('security');
+                if (desc.includes('api')) areas.add('API design');
+            }
+        });
+        
+        // Analyze from commit messages
+        const messages = commitData.map(c => c.message).join(' ').toLowerCase();
+        if (messages.includes('test')) areas.add('testing');
+        if (messages.includes('performance') || messages.includes('optimize')) areas.add('performance');
+        if (messages.includes('security')) areas.add('security');
+        if (messages.includes('refactor')) areas.add('code quality');
+        
+        return Array.from(areas).slice(0, 4);
+    }
+
+    private isRelevantTopic(topic: string): boolean {
+        const relevantTopics = [
+            'testing', 'performance', 'security', 'api', 'framework',
+            'library', 'tool', 'cli', 'web', 'mobile', 'desktop',
+            'machine-learning', 'ai', 'blockchain', 'devops'
+        ];
+        return relevantTopics.includes(topic.toLowerCase());
+    }
+
+    private analyzeCommunicationStyle(commitData: any[], profileData: any): any {
+        const messages = commitData.map(c => c.message).filter(Boolean);
+        
+        // Analyze commit message patterns
+        const avgLength = messages.reduce((sum, msg) => sum + msg.length, 0) / Math.max(messages.length, 1);
+        const formalLanguage = messages.filter(msg => msg.includes('Fix') || msg.includes('Add') || msg.includes('Update')).length / Math.max(messages.length, 1);
+        
+        // Determine style based on patterns
+        let style = 'supportive';
+        let approach = 'encouraging';
+        let verbosity = 'moderate';
+        
+        if (profileData.login === 'torvalds') {
+            // Special case for Linus - known for direct, sometimes harsh feedback
+            style = 'direct';
+            approach = 'critical';
+            verbosity = 'brief';
+        } else if (formalLanguage > 0.7) {
+            style = 'detailed';
+            approach = 'analytical';
+        }
+        
+        if (avgLength > 100) verbosity = 'detailed';
+        else if (avgLength < 30) verbosity = 'brief';
+        
+        return { style, approach, verbosity };
+    }
+
+    private extractTechnicalPatterns(commitData: any[], repoData: any[]): any {
+        const patterns = {
+            architectural: [],
+            coding: [],
+            reviewAreas: []
+        };
+        
+        // Analyze commit messages for technical patterns
+        const messages = commitData.map(c => c.message).join(' ').toLowerCase();
+        
+        // Architectural patterns
+        if (messages.includes('refactor')) patterns.architectural.push('refactoring');
+        if (messages.includes('performance') || messages.includes('optimize')) patterns.architectural.push('performance optimization');
+        if (messages.includes('security') || messages.includes('vulnerability')) patterns.architectural.push('security');
+        if (messages.includes('test') || messages.includes('testing')) patterns.architectural.push('testing');
+        
+        // Review focus areas
+        patterns.reviewAreas = ['code quality', 'performance', 'maintainability'];
+        if (patterns.architectural.includes('security')) patterns.reviewAreas.push('security');
+        if (patterns.architectural.includes('testing')) patterns.reviewAreas.push('test coverage');
+        
+        return patterns;
+    }
+
+    private inferPersonalityTraits(commitData: any[], profileData: any, repoData: any[]): any {
+        const traits = {
+            technicalDepth: 'intermediate',
+            mentoringStyle: 'collaborative',
+            problemSolving: 'systematic'
+        };
+        
+        // Analyze technical depth from repository complexity and commit patterns
+        const totalStars = repoData.reduce((sum, repo) => sum + (repo.stargazers_count || 0), 0);
+        const hasSystemsRepos = repoData.some(repo => 
+            repo.name.includes('kernel') || 
+            repo.name.includes('os') || 
+            repo.description?.toLowerCase().includes('operating system')
+        );
+        
+        if (totalStars > 10000 || hasSystemsRepos || profileData.login === 'torvalds') {
+            traits.technicalDepth = 'expert';
+            traits.problemSolving = 'architectural';
+        } else if (totalStars > 1000) {
+            traits.technicalDepth = 'advanced';
+        }
+        
+        return traits;
+    }
+
+    private generateAdvancedPrompts(profileData: any, communicationStyle: any, languages: any, patterns: any): any {
+        const name = profileData.name || profileData.login;
+        const expertise = languages.primary.join(', ');
+        
+        let personalityDesc = '';
+        if (profileData.login === 'torvalds') {
+            personalityDesc = 'You are Linus Torvalds, creator of Linux and Git. You are known for your direct, no-nonsense approach to code review and your deep understanding of systems programming. You value performance, simplicity, and correctness above all else. You can be blunt but always focus on technical merit.';
+        } else {
+            personalityDesc = `You are a coding mentor based on ${name}'s GitHub profile and coding patterns. Your communication style is ${communicationStyle.style} and you provide ${communicationStyle.approach} feedback.`;
+        }
+        
+        return {
+            systemPrompt: `${personalityDesc} Your expertise includes: ${expertise}. You focus on ${patterns.reviewAreas.join(', ')}. Provide ${communicationStyle.verbosity} responses that reflect your authentic coding style and technical philosophy.`,
+            reviewPrompt: `Review this code as ${name} would, focusing on ${patterns.reviewAreas.join(', ')}. Consider the architectural patterns and coding standards you're known for. Provide ${communicationStyle.approach} feedback in your characteristic ${communicationStyle.style} manner.`,
+            debuggingPrompt: `Help debug this issue using ${name}'s systematic approach. Focus on ${patterns.architectural.join(', ')} and apply the problem-solving methodology you're known for.`,
+            explanationPrompt: `Explain this code as ${name} would, using your ${communicationStyle.style} communication style with ${communicationStyle.verbosity} explanations. Draw from your experience with ${expertise} and ${patterns.coding.join(', ')}.`
+        };
+    }
+
     private getPersonalityDescription(profile: MentorProfile): string {
         if (profile.githubUsername) {
             const expertise = profile.personality.expertise.slice(0, 3).join(', ');
-            return `GitHub-based mentor specializing in ${expertise || 'software development'} with ${profile.personality.communicationStyle} communication style`;
+            
+            let description = `GitHub-based mentor specializing in ${expertise || 'software development'}`;
+            
+            // Add personality-specific details
+            if (profile.githubUsername === 'torvalds') {
+                description += ' - Creator of Linux & Git, known for direct technical leadership';
+            }
+            
+            return description;
         }
         
-        // Fallback descriptions for hardcoded profiles
-        switch (profile.id) {
-            case 'marcus':
-                return 'Brutally honest and direct - will tear your code apart but make you better';
-            case 'sophia':
-                return 'Sarcastic genius who uses wit and humor to teach you better coding';
-            case 'alex':
-                return 'Overwhelmingly positive and enthusiastic about everything you code';
-            default:
-                return `${profile.personality.communicationStyle} mentor focusing on ${profile.personality.focusAreas.join(', ')}`;
+        return `${profile.personality.communicationStyle} mentor focusing on ${profile.personality.focusAreas.join(', ')}`;
+    }
+
+    // Fix profile deletion functionality
+    public async deleteProfileWithConfirmation(id: string): Promise<boolean> {
+        const profile = this.profiles.get(id);
+        if (!profile) {
+            return false;
+        }
+        
+        const result = await vscode.window.showWarningMessage(
+            `Are you sure you want to delete the mentor profile "${profile.name}"?`,
+            { modal: true },
+            'Delete'
+        );
+        
+        if (result === 'Delete') {
+            return this.deleteProfile(id);
+        }
+        
+        return false;
+    }
+
+    // Enhanced profile management for UI
+    public async handleProfileDeletion(profileId: string): Promise<void> {
+        const deleted = await this.deleteProfileWithConfirmation(profileId);
+        if (deleted) {
+            vscode.window.showInformationMessage('Mentor profile deleted successfully.');
         }
     }
 }

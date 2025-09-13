@@ -74,7 +74,12 @@ function activate(context) {
     const activateCommand = vscode.commands.registerCommand('aiMentor.activate', () => {
         const activeProfile = profileManager.getActiveProfile();
         codeWatcher.activate();
-        vscode.window.showInformationMessage(`${activeProfile.name} is now mentoring you! I'm watching your code.`);
+        if (activeProfile) {
+            vscode.window.showInformationMessage(`${activeProfile.name} is now mentoring you! I'm watching your code.`);
+        }
+        else {
+            vscode.window.showInformationMessage('AI Mentor activated! Create a GitHub-based mentor profile for personalized guidance.');
+        }
     });
     const deactivateCommand = vscode.commands.registerCommand('aiMentor.deactivate', () => {
         codeWatcher.deactivate();
@@ -106,19 +111,28 @@ function activate(context) {
     const selectProfileCommand = vscode.commands.registerCommand('aiMentor.selectProfile', async () => {
         const profiles = profileManager.getAllProfiles();
         const activeProfile = profileManager.getActiveProfile();
+        if (profiles.length === 0) {
+            const choice = await vscode.window.showInformationMessage('No mentor profiles found. Would you like to create one from a GitHub profile?', 'Create GitHub Mentor');
+            if (choice === 'Create GitHub Mentor') {
+                vscode.commands.executeCommand('aiMentor.createGitHubMentor');
+            }
+            return;
+        }
         const items = profiles.map(profile => ({
             label: profile.name,
-            description: profile.githubUsername || 'Built-in',
-            detail: profile.id === activeProfile.id ? '$(check) Currently Active' : '',
+            description: profile.githubUsername ? `GitHub: ${profile.githubUsername}` : 'Custom',
+            detail: activeProfile && profile.id === activeProfile.id ? '$(check) Currently Active' : '',
             profile: profile
         }));
         const selected = await vscode.window.showQuickPick(items, {
             placeHolder: 'Select a mentor profile',
             matchOnDescription: true
         });
-        if (selected && selected.profile.id !== activeProfile.id) {
+        if (selected && (!activeProfile || selected.profile.id !== activeProfile.id)) {
             await profileManager.setActiveProfile(selected.profile.id);
             vscode.window.showInformationMessage(`Switched to mentor profile: ${selected.profile.name}`);
+            // Update the webview
+            aiMentorProvider.updateWebview();
         }
     });
     const createGitHubMentorCommand = vscode.commands.registerCommand('aiMentor.createGitHubMentor', async () => {
@@ -135,6 +149,8 @@ function activate(context) {
                 if (choice === 'Switch to Mentor') {
                     profileManager.setActiveProfile(mentorProfile.id);
                     vscode.window.showInformationMessage(`🎯 Now mentoring with ${mentorProfile.name}!`);
+                    // Update the webview
+                    aiMentorProvider.updateWebview();
                 }
             });
         }
@@ -142,106 +158,113 @@ function activate(context) {
             vscode.window.showErrorMessage(`Failed to create GitHub mentor: ${error.message}`);
         }
     });
-    const createProfileCommand = vscode.commands.registerCommand('aiMentor.createProfile', async () => {
-        const options = [
-            {
-                label: '$(github) Create from GitHub Profile',
-                description: 'Analyze a GitHub profile to create a personalized mentor',
-                action: 'github'
-            },
-            {
-                label: '$(person) Create Custom Profile',
-                description: 'Manually create a custom mentor profile',
-                action: 'custom'
-            }
-        ];
-        const selection = await vscode.window.showQuickPick(options, {
-            placeHolder: 'How would you like to create a mentor profile?'
-        });
-        if (selection?.action === 'github') {
-            vscode.commands.executeCommand('aiMentor.createGitHubMentor');
-        }
-        else if (selection?.action === 'custom') {
-            const name = await vscode.window.showInputBox({
-                prompt: 'Enter a name for the new mentor profile',
-                placeHolder: 'e.g., Senior React Developer'
-            });
-            if (!name)
-                return;
-            const profileId = `custom-${Date.now()}`;
-            const defaultProfile = profileManager.getProfile('marcus');
-            profileManager.addProfile({
-                ...defaultProfile,
-                id: profileId,
-                name: name,
-                lastUpdated: new Date(),
-                isActive: false
-            });
-            vscode.window.showInformationMessage(`Created new mentor profile: ${name}`);
-        }
-    });
-    const selectMentorCommand = vscode.commands.registerCommand('aiMentor.selectMentor', async () => {
-        const mentors = profileManager.getAvailableMentors();
-        const activeProfile = profileManager.getActiveProfile();
-        const items = mentors.map(mentor => ({
-            label: `${mentor.avatar} ${mentor.name}`,
-            description: mentor.personality,
-            detail: mentor.id === activeProfile.id ? '✅ Currently Active' : '',
-            mentorId: mentor.id
-        }));
-        const selection = await vscode.window.showQuickPick(items, {
-            placeHolder: 'Choose your coding mentor',
-            title: 'Select AI Mentor Personality'
-        });
-        if (selection) {
-            await profileManager.setActiveProfile(selection.mentorId);
-            const selectedMentor = mentors.find(m => m.id === selection.mentorId);
-            vscode.window.showInformationMessage(`🎯 Mentor switched to ${selectedMentor?.name}! ${selectedMentor?.personality}`, 'Start Mentoring').then(choice => {
-                if (choice === 'Start Mentoring') {
-                    vscode.commands.executeCommand('aiMentor.activate');
-                }
-            });
-        }
-    });
     const manageProfilesCommand = vscode.commands.registerCommand('aiMentor.manageProfiles', async () => {
         const profiles = profileManager.getAllProfiles();
         const activeProfile = profileManager.getActiveProfile();
-        console.log('Debug: Found profiles:', profiles.length);
-        console.log('Debug: Profile details:', profiles.map(p => ({ id: p.id, name: p.name })));
+        console.log('Managing profiles. Found:', profiles.length, 'profiles');
         if (profiles.length === 0) {
-            vscode.window.showInformationMessage('No profiles found. Try importing a GitHub profile first.');
+            const choice = await vscode.window.showInformationMessage('No mentor profiles found. Would you like to create one from a GitHub profile?', 'Create GitHub Mentor');
+            if (choice === 'Create GitHub Mentor') {
+                vscode.commands.executeCommand('aiMentor.createGitHubMentor');
+            }
             return;
         }
-        const items = profiles.map(profile => ({
-            label: profile.name,
-            description: profile.githubUsername || 'Built-in',
-            detail: profile.id === activeProfile.id ? '$(check) Active' : '',
-            buttons: profile.id !== 'default' ? [
-                {
-                    iconPath: new vscode.ThemeIcon('trash'),
-                    tooltip: 'Delete Profile'
-                }
-            ] : undefined,
+        // Create management options
+        const managementOptions = [
+            {
+                label: '$(add) Create New GitHub Mentor',
+                description: 'Create a new mentor from a GitHub profile',
+                action: 'create'
+            },
+            {
+                label: '$(trash) Delete Mentor Profile',
+                description: 'Delete an existing mentor profile',
+                action: 'delete'
+            },
+            {
+                label: '$(arrow-right) Switch Active Profile',
+                description: 'Change the currently active mentor',
+                action: 'switch'
+            }
+        ];
+        const selectedAction = await vscode.window.showQuickPick(managementOptions, {
+            placeHolder: 'What would you like to do?',
+            title: 'Manage Mentor Profiles'
+        });
+        if (!selectedAction)
+            return;
+        switch (selectedAction.action) {
+            case 'create':
+                vscode.commands.executeCommand('aiMentor.createGitHubMentor');
+                break;
+            case 'delete':
+                await handleProfileDeletion(profiles, profileManager, aiMentorProvider);
+                break;
+            case 'switch':
+                await handleProfileSwitch(profiles, activeProfile, profileManager, aiMentorProvider);
+                break;
+        }
+    });
+    async function handleProfileDeletion(profiles, profileManager, aiMentorProvider) {
+        const deleteItems = profiles.map(profile => ({
+            label: `$(trash) ${profile.name}`,
+            description: profile.githubUsername ? `GitHub: ${profile.githubUsername}` : 'Custom',
+            detail: profile.id,
             profile: profile
         }));
-        const selected = await vscode.window.showQuickPick(items, {
-            placeHolder: 'Manage mentor profiles (Select to activate, click trash to delete)',
-            matchOnDescription: true
+        const toDelete = await vscode.window.showQuickPick(deleteItems, {
+            placeHolder: 'Select a mentor profile to delete',
+            title: 'Delete Mentor Profile'
         });
-        if (selected) {
-            if (selected.profile.id !== activeProfile.id) {
-                await profileManager.setActiveProfile(selected.profile.id);
-                vscode.window.showInformationMessage(`Activated profile: ${selected.profile.name}`);
+        if (toDelete) {
+            const confirmed = await vscode.window.showWarningMessage(`Are you sure you want to delete "${toDelete.profile.name}"?`, { modal: true }, 'Delete');
+            if (confirmed === 'Delete') {
+                const success = profileManager.deleteProfile(toDelete.profile.id);
+                if (success) {
+                    vscode.window.showInformationMessage(`Deleted mentor profile: ${toDelete.profile.name}`);
+                    aiMentorProvider.updateWebview();
+                }
+                else {
+                    vscode.window.showErrorMessage('Failed to delete profile');
+                }
             }
         }
-    });
-    context.subscriptions.push(activateCommand, deactivateCommand, startDebuggingCommand, traceExecutionCommand, selectProfileCommand, createProfileCommand, createGitHubMentorCommand, selectMentorCommand, manageProfilesCommand);
-    // Show welcome message with mentor selection
-    vscode.window.showInformationMessage('Welcome to AI Debugger Mentor! Choose your mentor personality to get started.', 'Select Mentor').then(selection => {
-        if (selection === 'Select Mentor') {
-            vscode.commands.executeCommand('aiMentor.selectMentor');
+    }
+    async function handleProfileSwitch(profiles, activeProfile, profileManager, aiMentorProvider) {
+        const switchItems = profiles.map(profile => ({
+            label: profile.name,
+            description: profile.githubUsername ? `GitHub: ${profile.githubUsername}` : 'Custom',
+            detail: activeProfile && profile.id === activeProfile.id ? '$(check) Currently Active' : '',
+            profile: profile
+        }));
+        const selected = await vscode.window.showQuickPick(switchItems, {
+            placeHolder: 'Select a mentor profile to activate',
+            title: 'Switch Mentor Profile'
+        });
+        if (selected && (!activeProfile || selected.profile.id !== activeProfile.id)) {
+            await profileManager.setActiveProfile(selected.profile.id);
+            vscode.window.showInformationMessage(`Switched to mentor profile: ${selected.profile.name}`);
+            aiMentorProvider.updateWebview();
         }
-    });
+    }
+    context.subscriptions.push(activateCommand, deactivateCommand, startDebuggingCommand, traceExecutionCommand, selectProfileCommand, createGitHubMentorCommand, manageProfilesCommand);
+    // Add logging for profile manager initialization
+    console.log('ProfileManager initialized with', profileManager.getAllProfiles().length, 'profiles');
+    const startupActiveProfile = profileManager.getActiveProfile();
+    if (startupActiveProfile) {
+        console.log('Active profile on startup:', startupActiveProfile.name, '(ID:', startupActiveProfile.id, ')');
+    }
+    else {
+        console.log('No active profile on startup');
+    }
+    // Show welcome message with mentor creation
+    if (!startupActiveProfile) {
+        vscode.window.showInformationMessage('Welcome to AI Debugger Mentor! Create a GitHub-based mentor to get started.', 'Create GitHub Mentor').then(selection => {
+            if (selection === 'Create GitHub Mentor') {
+                vscode.commands.executeCommand('aiMentor.createGitHubMentor');
+            }
+        });
+    }
     // Auto-activate on supported languages
     const activeEditor = vscode.window.activeTextEditor;
     if (activeEditor && isSupportedLanguage(activeEditor.document.languageId)) {
