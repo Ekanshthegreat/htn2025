@@ -355,7 +355,7 @@ export class GraphiteService {
                 
                 // Simple heuristics for code quality
                 const lines = text.split('\n');
-                const longLines = lines.filter(line => line.length > 120);
+                const longLines = lines.filter((line: string) => line.length > 120);
                 const complexFunctions = text.match(/function\s+\w+\([^)]*\)\s*{[^}]{200,}/g) || [];
                 
                 if (longLines.length / lines.length < 0.1) {
