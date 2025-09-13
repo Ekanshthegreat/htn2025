@@ -12,7 +12,7 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
         private readonly _extensionUri: vscode.Uri,
         private codeWatcher: CodeWatcher,
         private llmService: LLMService,
-        private profileManager?: ProfileManager
+        private profileManager?: any
     ) {
         // Listen for mentor responses
         this.setupMessageListener();

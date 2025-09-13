@@ -90,10 +90,10 @@ Judging Criteria:
 
 - **VAPI** (Voice AI technology)
 - **Graphite** (Engineering productivity and code review)
+- **MLH** (Gemini integration) - Primary focus for LLM integration
 - Windsurf (AI-powered development tools)
 - Genesys (AI/ML APIs)
 - Warp (Terminal integration)
-- MLH (Gemini integration)
 
 ## Team
 

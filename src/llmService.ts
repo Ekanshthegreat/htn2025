@@ -35,10 +35,10 @@ export interface MentorResponse {
 export class LLMService {
     private openai: OpenAI | null = null;
     private conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-    private profileManager: ProfileManager | null = null;
+    private profileManager?: any;
 
-    constructor(profileManager?: ProfileManager) {
-        this.profileManager = profileManager || null;
+    constructor(profileManager?: any) {
+        this.profileManager = profileManager;
         this.initializeProvider();
     }
 

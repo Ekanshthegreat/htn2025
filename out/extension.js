@@ -15,15 +15,26 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deactivate = exports.activate = void 0;
+exports.activate = activate;
+exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const aiMentorProvider_1 = require("./aiMentorProvider");
 const codeWatcher_1 = require("./codeWatcher");
@@ -31,6 +42,7 @@ const astAnalyzer_1 = require("./astAnalyzer");
 const llmService_1 = require("./llmService");
 const voiceService_1 = require("./voiceService");
 const graphiteService_1 = require("./graphiteService");
+const realtimeAnalyzer_1 = require("./realtimeAnalyzer");
 const profileManager_1 = require("./profileManager");
 const githubService_1 = require("./githubService");
 let aiMentorProvider;
@@ -39,10 +51,11 @@ let astAnalyzer;
 let llmService;
 let voiceService;
 let graphiteService;
+let realtimeAnalyzer;
 let profileManager;
 let githubService;
 function activate(context) {
-    console.log('AI Debugger Mentor is now active!');
+    console.log('🚀 AI Debugger Mentor is now active!');
     // Initialize services
     profileManager = new profileManager_1.ProfileManager(context);
     githubService = new githubService_1.GitHubService();
@@ -50,6 +63,7 @@ function activate(context) {
     astAnalyzer = new astAnalyzer_1.ASTAnalyzer();
     voiceService = new voiceService_1.VoiceService();
     graphiteService = new graphiteService_1.GraphiteService();
+    realtimeAnalyzer = new realtimeAnalyzer_1.RealtimeAnalyzer(llmService, voiceService);
     codeWatcher = new codeWatcher_1.CodeWatcher(astAnalyzer, llmService);
     aiMentorProvider = new aiMentorProvider_1.AIMentorProvider(context.extensionUri, codeWatcher, llmService, profileManager);
     // Register the webview provider
@@ -99,9 +113,32 @@ function activate(context) {
     const toggleConversationalModeCommand = vscode.commands.registerCommand('aiMentor.toggleConversationalMode', async () => {
         await voiceService.toggleConversationalMode();
     });
-    // New Graphite Engineering Commands
+    // Register real-time analysis toggle
+    const toggleRealtimeAnalysisCommand = vscode.commands.registerCommand('aiMentor.toggleRealtimeAnalysis', () => {
+        const config = vscode.workspace.getConfiguration('aiMentor');
+        const enabled = config.get('realtimeAnalysis', true);
+        config.update('realtimeAnalysis', !enabled, vscode.ConfigurationTarget.Global);
+        if (!enabled) {
+            // Enable real-time analysis
+            realtimeAnalyzer.enable();
+            vscode.window.showInformationMessage('🤖 AI Mentor real-time analysis ENABLED - watching your code!');
+        }
+        else {
+            // Disable real-time analysis
+            realtimeAnalyzer.disable();
+            vscode.window.showInformationMessage('⏸️ AI Mentor real-time analysis DISABLED');
+        }
+    });
+    // Register engineering practices commands
     const showEngineeringReportCommand = vscode.commands.registerCommand('aiMentor.showEngineeringReport', async () => {
-        await graphiteService.showEngineeringReport();
+        try {
+            const report = await graphiteService.generateEngineeringReport();
+            const panel = vscode.window.createWebviewPanel('engineeringReport', '📊 Engineering Practices Report', vscode.ViewColumn.One, { enableScripts: true });
+            panel.webview.html = report;
+        }
+        catch (error) {
+            vscode.window.showErrorMessage(`Failed to generate engineering report: ${error}`);
+        }
     });
     const analyzeEngineeringPracticesCommand = vscode.commands.registerCommand('aiMentor.analyzeEngineeringPractices', async () => {
         const practices = await graphiteService.analyzeEngineeringPractices();
@@ -201,14 +238,14 @@ function activate(context) {
             }
         }
     });
-    context.subscriptions.push(activateCommand, deactivateCommand, startDebuggingCommand, traceExecutionCommand, startVoiceConversationCommand, startMultiModalAgentCommand, toggleVoiceCommand, toggleConversationalModeCommand, showEngineeringReportCommand, analyzeEngineeringPracticesCommand, narrateEngineeringPracticesCommand, selectProfileCommand, createProfileCommand, importGithubProfileCommand, manageProfilesCommand);
+    context.subscriptions.push(activateCommand, deactivateCommand, startDebuggingCommand, traceExecutionCommand, startVoiceConversationCommand, startMultiModalAgentCommand, toggleVoiceCommand, toggleConversationalModeCommand, toggleRealtimeAnalysisCommand, showEngineeringReportCommand, analyzeEngineeringPracticesCommand, narrateEngineeringPracticesCommand, selectProfileCommand, createProfileCommand, importGithubProfileCommand, manageProfilesCommand);
+    context.subscriptions.push(narrateEngineeringPracticesCommand);
     // Auto-activate on supported languages
     const activeEditor = vscode.window.activeTextEditor;
     if (activeEditor && isSupportedLanguage(activeEditor.document.languageId)) {
         vscode.commands.executeCommand('aiMentor.activate');
     }
 }
-exports.activate = activate;
 function isSupportedLanguage(languageId) {
     const supportedLanguages = ['javascript', 'typescript', 'python', 'java', 'cpp'];
     return supportedLanguages.includes(languageId);
@@ -218,5 +255,4 @@ function deactivate() {
         codeWatcher.deactivate();
     }
 }
-exports.deactivate = deactivate;
 //# sourceMappingURL=extension.js.map
