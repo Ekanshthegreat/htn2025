@@ -1,5 +1,6 @@
-# Compiled output
-/out/
+# Compiled output - VS Code extension build files
+out/
+*.vsix
 *.js.map
 
 # Node modules
