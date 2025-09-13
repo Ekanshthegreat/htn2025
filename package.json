@@ -60,6 +60,16 @@
         "command": "aiMentor.manageProfiles",
         "title": "⚙️ Manage Profiles",
         "category": "AI Mentor Profiles"
+      },
+      {
+        "command": "aiMentor.speakToMentor",
+        "title": "🎤 Speak to your mentor",
+        "category": "AI Mentor"
+      },
+      {
+        "command": "aiMentor.configureVAPI",
+        "title": "⚙️ Configure VAPI Settings",
+        "category": "AI Mentor"
       }
     ],
     "views": {
@@ -139,6 +149,16 @@
           "type": "string",
           "default": "marcus",
           "description": "Currently active mentor profile ID"
+        },
+        "aiMentor.vapiPublicKey": {
+          "type": "string",
+          "default": "365fc87d-f1cb-46a1-9e20-be85b18aab41",
+          "description": "VAPI public key for voice functionality"
+        },
+        "aiMentor.vapiAssistantId": {
+          "type": "string",
+          "default": "8026e50f-8bd8-42e6-9f95-6176698aa424",
+          "description": "VAPI assistant ID for voice conversations"
         }
       }
     }
@@ -161,6 +181,7 @@
     "@google/generative-ai": "^0.2.1",
     "@vapi-ai/web": "^1.0.0",
     "diff": "^5.1.0",
+    "node-fetch": "^3.3.2",
     "openai": "^5.20.2",
     "ws": "^8.14.0"
   }

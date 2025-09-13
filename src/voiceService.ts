@@ -1,4 +1,13 @@
 import * as vscode from 'vscode';
+import * as http from 'http';
+import * as path from 'path';
+import * as fs from 'fs';
+
+interface TranscriptEvent {
+    text: string;
+    role?: 'user' | 'assistant' | 'system';
+    timestamp?: string;
+}
 
 export interface VoiceConfig {
     enabled: boolean;
@@ -15,53 +24,1002 @@ export interface VoiceCommand {
     confidence: number;
 }
 
+// Global window interface extensions for VAPI
+declare global {
+    interface Window {
+        VAPI: {
+            createSDK: (apiKey: string) => VAPISDK;
+        };
+        vapiSDK?: VAPISDK;
+        vapiInstance?: VAPIClient;
+        startVapiCall: () => Promise<void>;
+        stopVapiCall: () => Promise<void>;
+        updateStatus?: (status: string, message?: string) => void;
+        isConnected?: boolean;
+        startBtn?: HTMLButtonElement;
+        stopBtn?: HTMLButtonElement;
+    }
+}
+
+interface VAPIConfig {
+    publicKey: string;
+    assistantId: string;
+    enabled: boolean;
+}
+
+type VAPIRole = 'user' | 'assistant' | 'system';
+
+interface VAPITranscriptEvent {
+    type: 'transcript';
+    transcript: {
+        text: string;
+        role: VAPIRole;
+    };
+}
+
+interface VAPIStatusEvent {
+    type: 'status';
+    status: 'connected' | 'disconnected' | 'error';
+    message?: string;
+}
+
+type VAPIEvent = VAPITranscriptEvent | VAPIStatusEvent;
+
+interface VAPIClient {
+    start: (config?: Record<string, unknown>) => Promise<void>;
+    stop: () => Promise<void>;
+    on: (event: string, callback: (data: unknown) => void) => void;
+    off: (event: string, callback: (data: unknown) => void) => void;
+    // Add any other methods that are used with the VAPI client
+    [key: string]: unknown;
+}
+
+interface VAPISDK {
+    createClient: (config: {
+        apiKey: string;
+        assistantId: string;
+        onMessage?: (message: VAPIEvent) => void;
+        onError?: (error: Error) => void;
+    }) => VAPIClient;
+    run: (config: any) => Promise<void>;
+}
+
+// Remove duplicate Window interface declaration
+
 export class VoiceService {
-    private vapi: any = null;
+    private vapi: VAPIClient | null = null;
     private isInitialized = false;
     private currentNarration: string = '';
     private isListening = false;
     private conversationHistory: Array<{role: string, content: string}> = [];
     private currentCall: any = null;
+    private aiMentorProvider: any = null;
+    private server: http.Server | null = null;
+    private serverPort = 3001;
+    private vapiSDK: VAPISDK | null = null;
+    private vapiPublicKey: string = '';
+    private assistantId: string = '';
 
     constructor() {
-        this.initializeVAPI();
+        this.initializeExternalVAPI();
     }
 
-    private async initializeVAPI() {
+    private async initializeExternalVAPI() {
         try {
-            // Dynamic import for VAPI
-            const { default: Vapi } = await import('@vapi-ai/web');
-            
+            // Load configuration
             const config = vscode.workspace.getConfiguration('aiMentor');
-            const vapiKey = config.get<string>('vapiApiKey');
+            this.vapiPublicKey = config.get<string>('vapiPublicKey') || '';
+            this.assistantId = config.get<string>('assistantId') || '';
+            
+            if (!this.vapiPublicKey || !this.assistantId) {
+                console.error('VAPI configuration is missing');
+                return;
+            }
+            
+            this.startExternalServer();
+            this.isInitialized = true;
+            console.log('External VAPI server initialized successfully');
+        } catch (error) {
+            console.error('Error initializing external VAPI server:', error);
+        }
+    }
 
-            if (!vapiKey) {
-                console.log('VAPI API key not configured');
+    private startExternalServer() {
+        this.server = http.createServer((req: http.IncomingMessage, res: http.ServerResponse) => {
+            if (req.url === '/') {
+                const htmlContent = this.generateVAPIHTML();
+                res.writeHead(200, { 'Content-Type': 'text/html' });
+                res.end(htmlContent);
+            } else if (req.url === '/api/transcript' && req.method === 'POST') {
+                let body = '';
+                req.on('data', chunk => {
+                    body += chunk.toString();
+                });
+                req.on('end', () => {
+                    try {
+                        const data = JSON.parse(body) as { transcript: string; role?: string };
+                        if (this.aiMentorProvider && data.transcript) {
+                            this.aiMentorProvider.addTranscript(data.transcript, data.role || 'user');
+                        }
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ success: true }));
+                    } catch (error) {
+                        console.error('Error processing transcript:', error);
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: 'Invalid request' }));
+                    }
+                });
+            } else if (req.url === '/api/status' && req.method === 'POST') {
+                let body = '';
+                req.on('data', chunk => {
+                    body += chunk.toString();
+                });
+                req.on('end', () => {
+                    try {
+                        const data = JSON.parse(body) as { status: string; message?: string };
+                        if (this.aiMentorProvider && data.status) {
+                            this.aiMentorProvider.handleVapiConnectionStatus(data.status, data.message || '');
+                        }
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ success: true }));
+                    } catch (error) {
+                        console.error('Error processing status update:', error);
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: 'Invalid request' }));
+                    }
+                });
+            } else {
+                res.writeHead(404, { 'Content-Type': 'text/plain' });
+                res.end('Not Found');
+            }
+        });
+
+        this.server.listen(this.serverPort, () => {
+            console.log(`External VAPI server running on http://localhost:${this.serverPort}`);
+        });
+    }
+
+    private generateVAPIHTML(): string {
+        const config = vscode.workspace.getConfiguration('aiMentor');
+        const vapiPublicKey = config.get<string>('vapiPublicKey') || 'default-key';
+        const assistantId = config.get<string>('vapiAssistantId') || 'default-assistant-id';
+
+        return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Mentor Voice Interface</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            margin: 0;
+            padding: 20px;
+            background: #000;
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: #111;
+            border: 2px solid #333;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+        }
+        h1 {
+            margin-bottom: 20px;
+            font-size: 1.8em;
+            font-weight: normal;
+            color: #fff;
+        }
+        .voice-button {
+            background: #fff;
+            border: 2px solid #333;
+            border-radius: 4px;
+            color: #000;
+            padding: 15px 30px;
+            font-size: 16px;
+            font-family: 'Courier New', monospace;
+            cursor: pointer;
+            margin: 10px;
+            min-width: 150px;
+            transition: all 0.2s ease;
+        }
+        .voice-button:hover {
+            background: #f0f0f0;
+        }
+        .voice-button:disabled {
+            background: #333;
+            color: #666;
+            cursor: not-allowed;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #333;
+            background: #111;
+            font-size: 14px;
+            font-family: 'Courier New', monospace;
+        }
+        .terminal-output {
+            background: #111;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+            min-height: 100px;
+            max-height: 150px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            color: #0f0;
+        }
+        .transcript-message {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #1a1a1a;
+            border-radius: 4px;
+            border-left: 3px solid #4CAF50;
+        }
+        .transcript-message.user {
+            border-left-color: #2196F3;
+        }
+        .transcript-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+            color: #888;
+        }
+        .transcript-role {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .transcript-message.user .transcript-role {
+            color: #2196F3;
+        }
+        .transcript-time {
+            color: #666;
+            font-size: 0.85em;
+        }
+        .transcript-text {
+            color: #fff;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .transcript-item {
+            margin: 8px 0;
+            padding: 8px;
+            border-left: 3px solid #333;
+        }
+        .user { border-left-color: #fff; }
+        .assistant { border-left-color: #666; }
+        .instructions {
+            margin: 15px 0;
+            padding: 15px;
+            border: 1px solid #333;
+            background: #111;
+            font-size: 13px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 AI Mentor Voice Interface</h1>
+        <p>Voice-powered debugging assistance outside VSCode constraints</p>
+        
+        <div class="instructions">
+            <strong>Instructions:</strong><br>
+            1. Click "Start Voice Chat" below<br>
+            2. Allow microphone access when prompted<br>
+            3. Speak naturally to your AI Debugging Mentor<br>
+            4. View transcripts in real-time below
+        </div>
+        
+        <button id="startBtn" class="voice-button">🎤 Start Voice Chat</button>
+        <button id="stopBtn" class="voice-button" disabled>⏹ Stop Voice Chat</button>
+        
+        <div id="status" class="status">Ready to connect...</div>
+        <div id="transcript" class="terminal-output">
+            <div class="line">Live transcription will appear here...</div>
+        </div>
+        <div id="transcript-container" style="margin-top: 20px; border-top: 1px solid #333; padding: 15px; max-height: 300px; overflow-y: auto;">
+            <h3 style="margin-top: 0; color: #fff;">Conversation History</h3>
+            <div id="transcript-messages" style="font-family: 'Courier New', monospace; color: #fff;">
+                <!-- Transcript messages will be added here -->
+            </div>
+        </div>
+        <div id="transcript-display" style="margin-top: 20px; border-top: 1px solid #333; padding-top: 10px;">
+            <h3>Live Transcript</h3>
+            <div id="transcript-content" style="min-height: 100px; max-height: 300px; overflow-y: auto; background: #111; padding: 10px; border-radius: 4px; font-family: 'Courier New', monospace; white-space: pre-wrap;"></div>
+        </div>
+    </div>
+
+    <script>
+        // Load VAPI SDK with correct CDN URLs
+        async function loadVAPISDK() {
+            const cdnUrls = [
+                'https://unpkg.com/@vapi-ai/web@latest/dist/index.umd.js',
+                'https://cdn.jsdelivr.net/npm/@vapi-ai/web@latest/dist/index.umd.js',
+                'https://cdn.jsdelivr.net/gh/VapiAI/html-script-tag@latest/dist/assets/index.js'
+            ];
+            
+            for (const url of cdnUrls) {
+                try {
+                    console.log('Attempting to load VAPI SDK from:', url);
+                    await new Promise((resolve, reject) => {
+                        const script = document.createElement('script');
+                        script.src = url;
+                        script.onload = resolve;
+                        script.onerror = reject;
+                        document.head.appendChild(script);
+                    });
+                    
+                    // Wait a bit for async loading
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    // Check if VAPI is available (different ways depending on CDN)
+                    if (typeof window.Vapi !== 'undefined') {
+                        console.log('VAPI SDK (window.Vapi) loaded successfully from:', url);
+                        return true;
+                    } else if (typeof Vapi !== 'undefined') {
+                        console.log('VAPI SDK (Vapi) loaded successfully from:', url);
+                        return true;
+                    } else if (typeof window.vapiSDK !== 'undefined') {
+                        console.log('VAPI SDK (vapiSDK) loaded successfully from:', url);
+                        window.Vapi = window.vapiSDK.default || window.vapiSDK.Vapi || window.vapiSDK;
+                        return true;
+                    }
+                    
+                    // Check for UMD module pattern
+                    if (typeof window.VapiWeb !== 'undefined') {
+                        console.log('VAPI SDK (VapiWeb) loaded successfully from:', url);
+                        window.Vapi = window.VapiWeb.default || window.VapiWeb;
+                        return true;
+                    }
+                } catch (error) {
+                    console.warn('Failed to load VAPI SDK from:', url, error);
+                }
+            }
+            
+            console.error('Failed to load VAPI SDK from all CDN sources');
+            return false;
+        }
+    </script>
+    <script>
+        let vapi = null;
+        let isConnected = false;
+        
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const status = document.getElementById('status');
+        const transcript = document.getElementById('transcript');
+        
+        const vapiPublicKey = '365fc87d-f1cb-46a1-9e20-be85b18aab41';
+        const assistantId = '${assistantId}';
+        
+        function updateStatus(message: string, isError: boolean = false): void {
+            if (!status) {
+                console.warn('Status element not found');
                 return;
             }
 
-            this.vapi = new Vapi(vapiKey);
-            this.isInitialized = true;
+            status.textContent = message;
+            status.style.background = isError ? 'rgba(244, 67, 54, 0.3)' : 'rgba(76, 175, 80, 0.3)';
             
-            // Set up event listeners
-            this.vapi.on('call-start', () => {
-                console.log('Voice narration started');
-            });
+            // Send status to VSCode extension
+            const sendStatus = async (): Promise<void> => {
+                try {
+                    const response = await fetch('/api/status', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            status: isError ? 'error' : 'info', 
+                            message: message 
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    const data: unknown = await response.json();
+                    console.debug('Status update sent:', data);
+                } catch (error: unknown) {
+                    const errorMessage = error instanceof Error ? error.message : String(error);
+                    console.error('Failed to send status update:', errorMessage);
+                }
+            };
+            
+            void sendStatus();
+        }
+        
+        // VAPI Client Types
+        interface VAPIClient {
+            on: (event: string, callback: (data: any) => void) => void;
+            start: (assistantId?: string) => Promise<void>;
+            stop: () => Promise<void>;
+            isMuted: boolean;
+            isSpeaking: boolean;
+            assistantId?: string;
+            publicKey?: string;
+        }
 
-            this.vapi.on('call-end', () => {
-                console.log('Voice narration ended');
-            });
+        interface VAPIConfig {
+            publicKey: string;
+            assistantId?: string;
+            onMessage?: (message: string) => void;
+            onError?: (error: Error) => void;
+            onCallStart?: () => void;
+            onCallEnd?: () => void;
+        }
 
-            this.vapi.on('speech-start', () => {
-                console.log('AI started speaking');
-            });
+        // Global type declarations
+        declare global {
+            interface Window {
+                Vapi?: new (config: VAPIConfig) => VAPIClient;
+                vapi?: VAPIClient;
+                vapiSDK?: any;
+                vapiInstance?: VAPIClient;
+                startVapiCall?: () => Promise<void>;
+                stopVapiCall?: () => Promise<void>;
+            }
 
-            this.vapi.on('speech-end', () => {
-                console.log('AI finished speaking');
+            interface Document {
+                getElementById(elementId: string): HTMLElement | null;
+                addEventListener: (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) => void;
+            }
+
+            interface HTMLElement {
+                addEventListener: (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) => void;
+                removeEventListener: (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) => void;
+                disabled: boolean;
+                textContent: string | null;
+                style: CSSStyleDeclaration;
+                innerHTML: string;
+                appendChild: <T extends Node>(node: T) => T;
+                scrollTop: number;
+                scrollHeight: number;
+            }
+
+            interface HTMLButtonElement extends HTMLElement {
+                disabled: boolean;
+                addEventListener: (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) => void;
+            }
+
+            const document: Document;
+            const fetch: (input: RequestInfo, init?: RequestInit) => Promise<Response>;
+            const console: Console;
+        }
+
+        // VAPI Type Declarations
+        interface VAPIClient {
+            start: (config?: VAPIConfig) => Promise<void>;
+            stop: () => Promise<void>;
+            on: (event: string, callback: (data: any) => void) => void;
+            isConnected: boolean;
+        }
+
+        interface VAPIConfig {
+            assistantId?: string;
+            publicKey?: string;
+            // Add other VAPI config properties as needed
+        }
+
+        // Extend Window interface to include VAPI SDK
+        interface Window {
+            Vapi?: {
+                create: (config: VAPIConfig) => VAPIClient;
+            };
+            vapiSDK?: any; // More specific type if available
+            vapi?: VAPIClient;
+            startVapiCall?: () => Promise<void>;
+            stopVapiCall?: () => Promise<void>;
+        }
+
+        // DOM element references with proper null checks and type assertions
+        const status = document.getElementById('status');
+        const startBtn = document.getElementById('startBtn') as HTMLButtonElement | null;
+        const stopBtn = document.getElementById('stopBtn') as HTMLButtonElement | null;
+        const transcriptDiv = document.getElementById('transcript') as HTMLElement | null;
+        const transcriptMessages = document.getElementById('transcript-messages') as HTMLElement | null;
+        
+        if (!status || !startBtn || !stopBtn || !transcriptDiv || !transcriptMessages) {
+            console.error('Required DOM elements not found');
+            return;
+        }
+        
+        let isConnected = false;
+        let vapiInstance: VAPIClient | null = null;
+
+        // Global type declarations
+        declare global {
+            // VAPI Client Types
+            interface VAPIClient {
+                on(event: 'call-start' | 'call-end' | 'speech-start' | 'speech-end' | 'transcript', 
+                   callback: (data: any) => void): void;
+                start(assistantId?: string): Promise<void>;
+                stop(): Promise<void>;
+            }
+
+            interface VAPIConfig {
+                publicKey: string;
+                assistantId?: string;
+                model?: {
+                    provider: 'openai' | 'anthropic' | 'deepgram' | 'assembly' | 'gladia' | 'revai' | 'speechmatics';
+                    model: string;
+                    voice?: string;
+                    language?: string;
+                };
+                voice?: {
+                    provider: '11labs' | 'playht' | 'resemble' | 'deepgram' | 'assembly' | 'murf' | 'wellsaid';
+                    voiceId: string;
+                };
+                transcriber?: {
+                    provider: 'deepgram' | 'assembly' | 'gladia' | 'revai' | 'speechmatics';
+                    model?: string;
+                    language?: string;
+                    keywords?: string[];
+                };
+                firstMessage?: string;
+            }
+
+            // Extend Window interface to include VAPI SDK
+            interface Window {
+                Vapi: {
+                    createClient: (config: VAPIConfig) => VAPIClient;
+                };
+                vapiSDK: any;
+                vapi: VAPIClient | null;
+                startVapiCall: () => Promise<void>;
+                stopVapiCall: () => Promise<void>;
+            }
+
+            // DOM Elements
+            interface HTMLElementTagNameMap {
+                'transcript-container': HTMLDivElement;
+                'transcript-messages': HTMLDivElement;
+                'status': HTMLDivElement;
+                'startBtn': HTMLButtonElement;
+                'stopBtn': HTMLButtonElement;
+            }
+        }
+
+        // Define TranscriptEvent interface
+        interface TranscriptEvent {
+            text: string;
+            role: 'user' | 'assistant' | 'system';
+            timestamp: string;
+        }
+
+        // Declare DOM elements with proper type assertions and null checks
+        const status = document.getElementById('status') as HTMLDivElement;
+        const startBtn = document.getElementById('startBtn') as HTMLButtonElement;
+        const stopBtn = document.getElementById('stopBtn') as HTMLButtonElement;
+        const transcriptDiv = document.getElementById('transcript') as HTMLDivElement;
+        const transcriptMessages = document.getElementById('transcript-messages') as HTMLDivElement;
+        
+        // Add null checks for all DOM elements
+        if (!status || !startBtn || !stopBtn || !transcriptDiv || !transcriptMessages) {
+            console.error('Required DOM elements not found');
+            return;
+        }
+
+        // Function to update status in the UI
+        function updateStatus(message: string, isError = false): void {
+            status.textContent = message;
+            status.style.color = isError ? 'red' : 'green';
+            console.log(`[Status] ${message}`);
+
+            // Send status to VSCode extension
+            fetch('/status', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ message, isError })
+            }).catch(error => {
+                console.error('Failed to send status to VSCode:', error);
             });
+            fetch('/api/status', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ message, isError })
+            }).catch((error: Error) => {
+                console.error('Failed to send status to VSCode:', error);
+            });
+        }
+
+        // Function to safely add transcript messages to the UI and send to VSCode
+        function addTranscript(text: string, role: 'user' | 'assistant' | 'system' = 'assistant'): void {
+            try {
+                if (!transcriptMessages) {
+                    console.error('Transcript messages container not found');
+                    return;
+                }
+
+                const timestamp = new Date().toISOString();
+                const event: TranscriptEvent = { 
+                    text: text.trim(), 
+                    role, 
+                    timestamp 
+                };
+                
+                // Add to UI
+                const messageElement = document.createElement('div');
+                messageElement.className = `message ${role}`;
+                
+                const roleElement = document.createElement('div');
+                roleElement.className = 'message-role';
+                roleElement.textContent = role.toUpperCase();
+                
+                const textElement = document.createElement('div');
+                textElement.className = 'message-text';
+                textElement.textContent = event.text;
+                
+                const timeElement = document.createElement('div');
+                timeElement.className = 'message-time';
+                timeElement.textContent = new Date(timestamp).toLocaleTimeString();
+                
+                messageElement.appendChild(roleElement);
+                messageElement.appendChild(textElement);
+                messageElement.appendChild(timeElement);
+                
+                transcriptMessages.appendChild(messageElement);
+                transcriptMessages.scrollTop = transcriptMessages.scrollHeight;
+                
+                // Send to VSCode extension
+                fetch('/api/transcript', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(event)
+                }).catch((error: Error) => {
+                    console.error('Failed to send transcript to VSCode:', error);
+                });
+                
+                // If we have a VAPI instance, handle the transcript
+                if (vapi) {
+                    // Handle transcript with VAPI if needed
+                    console.log('Transcript sent to VAPI:', { text, role });
+                }
+            } catch (error) {
+                console.error('Error in addTranscript:', error);
+            }
+        }
+                }
+
+                const { text, role: eventRole = 'assistant' } = event;
+                const timestamp = new Date().toISOString();
+                
+                // Update live transcript display
+                if (transcriptDiv) {
+                    transcriptDiv.innerHTML = `<div class="line">${text}</div>`;
+                    transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
+                }
+                
+                // Add to conversation history
+                if (transcriptMessages) {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = `transcript-message ${eventRole}`;
+                    
+                    messageDiv.innerHTML = `
+                        <div class="transcript-header">
+                            <span class="transcript-role">${eventRole === 'user' ? 'You' : 'Mentor'}</span>
+                            <span class="transcript-time">${new Date(timestamp).toLocaleTimeString()}</span>
+                        </div>
+                        <div class="transcript-text">${text}</div>
+                    `;
+                    
+                    transcriptMessages.appendChild(messageDiv);
+                    transcriptMessages.scrollTop = transcriptMessages.scrollHeight;
+                }
+                
+                // Send transcript to VSCode extension
+                fetch('/api/transcript', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        text: event.text,
+                        role: event.role || 'assistant',
+                        timestamp: new Date().toISOString()
+                    })
+                }).catch(error => {
+                    console.error('Failed to send transcript to VSCode:', error);
+                });
+            });      
+        }
+        
+        async function requestMicrophonePermission() {
+            try {
+                updateStatus('Requesting microphone permission...');
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                stream.getTracks().forEach(track => track.stop()); // Stop the stream, we just needed permission
+                updateStatus('Microphone permission granted ✓');
+                return true;
+            } catch (error) {
+                updateStatus('Microphone permission denied. Please allow microphone access and try again.', true);
+                console.error('Microphone permission error:', error);
+                return false;
+            }
+        }
+
+        async function initializeVAPI() {
+            try {
+                // First, try to load the VAPI SDK
+                updateStatus('Loading VAPI SDK...');
+                const sdkLoaded = await loadVAPISDK();
+                
+                if (!sdkLoaded || (typeof Vapi === 'undefined' && typeof window.Vapi === 'undefined' && typeof window.vapiSDK === 'undefined')) {
+                    throw new Error('VAPI SDK failed to load from all CDN sources');
+                }
+                
+                // Request microphone permission first
+                const hasPermission = await requestMicrophonePermission();
+                if (!hasPermission) {
+                    return;
+                }
+                
+                // Use the appropriate VAPI constructor
+}
+
+// Declare DOM elements with proper type assertions and null checks
+const status = document.getElementById('status') as HTMLDivElement;
+const startBtn = document.getElementById('startBtn') as HTMLButtonElement;
+const stopBtn = document.getElementById('stopBtn') as HTMLButtonElement;
+const transcriptDiv = document.getElementById('transcript') as HTMLDivElement;
+const transcriptMessages = document.getElementById('transcript-messages') as HTMLDivElement;
+
+// Add null checks for all DOM elements
+if (!status || !startBtn || !stopBtn || !transcriptDiv || !transcriptMessages) {
+    console.error('Required DOM elements not found');
+    return;
+}
+
+// Function to update status in the UI
+function updateStatus(message: string, isError = false): void {
+    status.textContent = message;
+    status.style.color = isError ? 'red' : 'green';
+    console.log(`[Status] ${message}`);
+
+    // Send status to VSCode extension
+    fetch('/status', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message, isError })
+    }).catch(error => {
+        console.error('Failed to send status to VSCode:', error);
+    });
+    fetch('/api/status', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message, isError })
+    }).catch((error: Error) => {
+        console.error('Failed to send status to VSCode:', error);
+    });
+}
+
+// Function to safely add transcript messages to the UI and send to VSCode
+function addTranscript(text: string, role: 'user' | 'assistant' | 'system' = 'assistant'): void {
+    try {
+        if (!transcriptMessages) {
+            console.error('Transcript messages container not found');
+            return;
+        }
+
+        const timestamp = new Date().toISOString();
+        const event: TranscriptEvent = { 
+            text: text.trim(), 
+            role, 
+            timestamp 
+        };
+        
+        // Add to UI
+        const messageElement = document.createElement('div');
+        messageElement.className = `message ${role}`;
+        
+        const roleElement = document.createElement('div');
+        roleElement.className = 'message-role';
+        roleElement.textContent = role.toUpperCase();
+        
+        const textElement = document.createElement('div');
+        textElement.className = 'message-text';
+        textElement.textContent = event.text;
+        
+        const timeElement = document.createElement('div');
+        timeElement.className = 'message-time';
+        timeElement.textContent = new Date(timestamp).toLocaleTimeString();
+        
+        messageElement.appendChild(roleElement);
+        messageElement.appendChild(textElement);
+        messageElement.appendChild(timeElement);
+        
+        transcriptMessages.appendChild(messageElement);
+        transcriptMessages.scrollTop = transcriptMessages.scrollHeight;
+        
+        // Send to VSCode extension
+        fetch('/api/transcript', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(event)
+        }).catch((error: Error) => {
+            console.error('Failed to send transcript to VSCode:', error);
+        });
+        
+        // If we have a VAPI instance, handle the transcript
+        if (vapi) {
+            // Handle transcript with VAPI if needed
+            console.log('Transcript sent to VAPI:', { text, role });
+        }
+    } catch (error) {
+        console.error('Error in addTranscript:', error);
+    }
+}
+
+// ... (rest of the code remains the same)
+
+// Function to generate VAPI HTML
+private generateVAPIHTML(): string {
+    return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>VAPI Voice Interface</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .container { max-width: 800px; margin: 0 auto; }
+            .status { margin: 10px 0; padding: 10px; border-radius: 4px; }
+            .connected { background-color: #d4edda; color: #155724; }
+            .disconnected { background-color: #f8d7da; color: #721c24; }
+            .transcript { margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; min-height: 100px; }
+            button { padding: 8px 16px; margin-right: 10px; cursor: pointer; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>VAPI Voice Interface</h1>
+            <div id="status" class="status">Disconnected</div>
+            <div>
+                <button id="startBtn">Start</button>
+                <button id="stopBtn" disabled>Stop</button>
+            </div>
+            <div class="transcript" id="transcript"></div>
+        </div>
+        <script>
+            document.addEventListener('DOMContentLoaded', async () => {
+                const statusEl = document.getElementById('status');
+                const startBtn = document.getElementById('startBtn');
+                const stopBtn = document.getElementById('stopBtn');
+                const transcriptEl = document.getElementById('transcript');
+                
+                if (!statusEl || !startBtn || !stopBtn || !transcriptEl) {
+                    console.error('Required elements not found');
+                    return;
+                }
+
+                const updateStatus = (status: string, message: string = '') => {
+                    statusEl.textContent = message || status;
+                    statusEl.className = `status ${status.toLowerCase()}`;
+                };
+
+                const appendToTranscript = (text: string, role: string = 'user') => {
+                    const div = document.createElement('div');
+                    div.textContent = `${role}: ${text}`;
+                    transcriptEl.appendChild(div);
+                    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+                };
+
+                // Initialize VAPI client
+                const vapi = window.VAPI?.createClient({
+                    apiKey: '${this.vapiPublicKey}',
+                    assistantId: '${this.assistantId}',
+                    onMessage: (event) => {
+                        if (event.type === 'transcript') {
+                            appendToTranscript(event.transcript, event.role);
+                        }
+                    },
+                    onError: (error) => {
+                        console.error('VAPI error:', error);
+                        updateStatus('error', error.message);
+                    }
+                });
+
+                if (!vapi) {
+                    updateStatus('error', 'Failed to initialize VAPI client');
+                    return;
+                }
+
+                // Event listeners
+                startBtn.addEventListener('click', async () => {
+                    try {
+                        await vapi.start();
+                        updateStatus('connected', 'Connected to VAPI');
+                        startBtn.disabled = true;
+                        stopBtn.disabled = false;
+                    } catch (error) {
+                        updateStatus('error', error.message);
+                    }
+                });
+
+                stopBtn.addEventListener('click', async () => {
+                    try {
+                        await vapi.stop();
+                        updateStatus('disconnected', 'Disconnected from VAPI');
+                        startBtn.disabled = false;
+                        stopBtn.disabled = true;
+                    } catch (error) {
+                        updateStatus('error', error.message);
+                    }
+                });
+            });
+        </script>
+    </body>
+    </html>`;
+}
+
+// ... (rest of the code remains the same)
+
+public setAIMentorProvider(provider: any) {
+    this.aiMentorProvider = provider;
+}
+
+private async handleVapiEvent(event: VAPIEvent): Promise<void> {
+    try {
+        if (event.type === 'transcript') {
+            const { transcript, role = 'user' } = event;
+        }
+
+        try {
+            // Open external VAPI interface in default browser
+            const url = `http://localhost:${this.serverPort}`;
+            await vscode.env.openExternal(vscode.Uri.parse(url));
+            
+            if (this.aiMentorProvider) {
+                this.aiMentorProvider.handleVapiConnectionStatus('info', 'Opening external voice interface...');
+            }
+            
+            this.isListening = true;
+            this.currentCall = true;
+            vscode.window.showInformationMessage('🎤 Opening external voice interface in browser...');
+            return true;
 
         } catch (error) {
-            console.error('Failed to initialize VAPI:', error);
+            console.error('Failed to start voice conversation:', error);
+            vscode.window.showErrorMessage(`Failed to start voice conversation: ${error}`);
+            return false;
+        }
+    }
+
+    async stopConversation(): Promise<void> {
+        if (this.isListening) {
+            try {
+                // Send message to webview to stop VAPI connection
+                if (this.aiMentorProvider) {
+                    this.aiMentorProvider.stopVoiceConnection();
+                }
+                this.isListening = false;
+                this.currentCall = null;
+                vscode.window.showInformationMessage('🔇 Voice conversation ended.');
+            } catch (error) {
+                console.error('Error stopping conversation:', error);
+            }
         }
     }
 

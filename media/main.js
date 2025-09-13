@@ -5,9 +5,12 @@
     const messagesContainer = document.getElementById('messages');
     const clearBtn = document.getElementById('clearBtn');
     const explainBtn = document.getElementById('explainBtn');
+    const speakBtn = document.getElementById('speakBtn');
     const codeInput = document.getElementById('codeInput');
     const statusText = document.getElementById('statusText');
     const mentorSelect = document.getElementById('mentorSelect');
+    
+    let isVoiceActive = false;
 
     // Event listeners
     clearBtn.addEventListener('click', () => {
@@ -30,6 +33,17 @@
     codeInput.addEventListener('keydown', (e) => {
         if (e.ctrlKey && e.key === 'Enter') {
             explainBtn.click();
+        }
+    });
+
+    // Voice button click handler
+    speakBtn.addEventListener('click', () => {
+        if (isVoiceActive) {
+            vscode.postMessage({ type: 'stopVoiceChat' });
+            updateStatus('Stopping voice chat...');
+        } else {
+            vscode.postMessage({ type: 'startVoiceChat' });
+            updateStatus('Starting voice chat...');
         }
     });
 
@@ -56,12 +70,39 @@
             case 'updateMessages':
                 displayMessages(message.messages);
                 break;
+            case 'vapiTranscript':
+                // Handle VAPI transcript updates
+                const transcriptContainer = document.getElementById('transcript-container');
+                if (transcriptContainer) {
+                    const transcriptDiv = document.createElement('div');
+                    transcriptDiv.className = `transcript-message ${message.role}`;
+                    const timestamp = new Date().toLocaleTimeString();
+                    transcriptDiv.innerHTML = `
+                        <div class="transcript-header">
+                            <span class="transcript-role">${message.role === 'user' ? 'You' : 'Mentor'}</span>
+                            <span class="transcript-time">${timestamp}</span>
+                        </div>
+                        <div class="transcript-text">${message.text}</div>
+                    `;
+                    transcriptContainer.appendChild(transcriptDiv);
+                    transcriptContainer.scrollTop = transcriptContainer.scrollHeight;
+                }
+                break;
             case 'statusUpdate':
                 updateStatus(message.status);
                 break;
             case 'updateProfiles':
                 updateActiveMentor(message.activeProfileId);
                 updateMentorName(message.activeMentorName);
+                break;
+            case 'voiceStateChanged':
+                updateVoiceButtonState(message.isActive);
+                break;
+            case 'startVAPIConnection':
+                startVAPIConnection(message.vapiPublicKey, message.assistantId);
+                break;
+            case 'stopVAPIConnection':
+                stopVAPIConnection();
                 break;
         }
     });
@@ -232,10 +273,302 @@
         updateStatus(`${mentorName || 'AI Mentor'} is ready to help`);
     }
 
+    function updateVoiceButtonState(isActive) {
+        isVoiceActive = isActive;
+        if (speakBtn) {
+            if (isActive) {
+                speakBtn.textContent = '🔇 Stop speaking';
+                speakBtn.classList.add('voice-active');
+                updateStatus('🎤 Voice chat active - speak to your mentor');
+            } else {
+                speakBtn.textContent = '🎤 Speak to your mentor';
+                speakBtn.classList.remove('voice-active');
+                updateStatus('Voice chat ended');
+            }
+        }
+    }
+
     function escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // VAPI Integration - runs in browser context with access to navigator.mediaDevices
+    let vapi = null;
+    let vapiConnected = false;
+    let microphonePermissionGranted = false;
+
+    // Check microphone availability without requesting permission immediately
+    async function checkMicrophoneAvailability() {
+        try {
+            // Check if microphone APIs are available
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                console.warn('getUserMedia not supported in this environment');
+                updateStatus('🔇 Voice features not supported in this environment');
+                return false;
+            }
+
+            // Check if we can enumerate devices (doesn't require permission)
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const hasAudioInput = devices.some(device => device.kind === 'audioinput');
+            
+            if (hasAudioInput) {
+                updateStatus('🎤 Voice ready - Click "Speak to your mentor" to start');
+                return true;
+            } else {
+                updateStatus('🔇 No microphone found - Please connect a microphone');
+                return false;
+            }
+        } catch (error) {
+            console.warn('Error checking microphone availability:', error.message);
+            updateStatus('🎤 Voice ready - Click "Speak to your mentor" to start');
+            return true; // Assume available if we can't check
+        }
+    }
+
+    // Request microphone permission only when needed
+    async function requestMicrophonePermission() {
+        try {
+            // Request microphone access
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            
+            // Stop the stream immediately - we just wanted permission
+            stream.getTracks().forEach(track => track.stop());
+            
+            microphonePermissionGranted = true;
+            console.log('Microphone permission granted');
+            return true;
+        } catch (error) {
+            console.warn('Microphone permission denied:', error.message);
+            microphonePermissionGranted = false;
+            
+            // Send error back to extension for user notification
+            vscode.postMessage({
+                type: 'vapiConnectionStatus',
+                status: 'error',
+                message: `Microphone access required: ${error.message}`
+            });
+            
+            return false;
+        }
+    }
+
+    // Direct VAPI loading workaround for VSCode webview
+    async function loadVAPIDirectly() {
+        return new Promise((resolve, reject) => {
+            try {
+                // Create script element for direct loading
+                const script = document.createElement('script');
+                script.type = 'module';
+                script.innerHTML = `
+                    import Vapi from 'https://esm.sh/@vapi-ai/web@latest';
+                    window.VapiClass = Vapi;
+                    window.dispatchEvent(new CustomEvent('vapiLoaded'));
+                `;
+                
+                // Listen for successful load
+                window.addEventListener('vapiLoaded', () => {
+                    console.log('VAPI loaded via direct script injection');
+                    resolve(window.VapiClass);
+                }, { once: true });
+                
+                // Add error handling
+                script.onerror = () => {
+                    console.error('Direct VAPI loading failed');
+                    resolve(null);
+                };
+                
+                document.head.appendChild(script);
+                
+                // Timeout after 10 seconds
+                setTimeout(() => {
+                    if (!window.VapiClass) {
+                        console.warn('VAPI loading timeout');
+                        resolve(null);
+                    }
+                }, 10000);
+                
+            } catch (error) {
+                console.error('Error in direct VAPI loading:', error);
+                resolve(null);
+            }
+        });
+    }
+
+    // Iframe proxy workaround for VAPI loading
+    async function loadVAPIViaIframe() {
+        return new Promise((resolve) => {
+            try {
+                // Create hidden iframe with relaxed security
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.sandbox = 'allow-scripts allow-same-origin allow-forms';
+                iframe.src = 'data:text/html,<!DOCTYPE html><html><head><script type="module">import Vapi from "https://esm.sh/@vapi-ai/web@latest";window.parent.postMessage({type:"vapiLoaded",Vapi:Vapi},"*");</script></head><body></body></html>';
+                
+                // Listen for VAPI from iframe
+                const messageHandler = (event) => {
+                    if (event.data && event.data.type === 'vapiLoaded') {
+                        console.log('VAPI loaded via iframe proxy');
+                        window.removeEventListener('message', messageHandler);
+                        document.body.removeChild(iframe);
+                        resolve(event.data.Vapi);
+                    }
+                };
+                
+                window.addEventListener('message', messageHandler);
+                document.body.appendChild(iframe);
+                
+                // Timeout after 15 seconds
+                setTimeout(() => {
+                    window.removeEventListener('message', messageHandler);
+                    if (document.body.contains(iframe)) {
+                        document.body.removeChild(iframe);
+                    }
+                    console.warn('Iframe VAPI loading timeout');
+                    resolve(null);
+                }, 15000);
+                
+            } catch (error) {
+                console.error('Iframe VAPI loading error:', error);
+                resolve(null);
+            }
+        });
+    }
+
+    // Check microphone availability on load (without requesting permission)
+    checkMicrophoneAvailability();
+
+    async function startVAPIConnection(vapiPublicKey, assistantId) {
+        try {
+            // Check if microphone permission was granted
+            if (!microphonePermissionGranted) {
+                const permissionGranted = await requestMicrophonePermission();
+                if (!permissionGranted) {
+                    throw new Error('Microphone permission required for voice chat');
+                }
+            }
+
+            // Multiple VAPI loading strategies as workarounds
+            let Vapi = null;
+            
+            // Strategy 1: Try ESM.sh
+            try {
+                console.log('Trying VAPI via esm.sh...');
+                const module = await import('https://esm.sh/@vapi-ai/web@latest');
+                Vapi = module.default || module.Vapi;
+            } catch (error) {
+                console.warn('ESM.sh failed:', error);
+            }
+            
+            // Strategy 2: Try unpkg.com
+            if (!Vapi) {
+                try {
+                    console.log('Trying VAPI via unpkg...');
+                    const module = await import('https://unpkg.com/@vapi-ai/web@latest/dist/index.js');
+                    Vapi = module.default || module.Vapi;
+                } catch (error) {
+                    console.warn('Unpkg failed:', error);
+                }
+            }
+            
+            // Strategy 3: Try jsdelivr
+            if (!Vapi) {
+                try {
+                    console.log('Trying VAPI via jsdelivr...');
+                    const module = await import('https://cdn.jsdelivr.net/npm/@vapi-ai/web@latest/+esm');
+                    Vapi = module.default || module.Vapi;
+                } catch (error) {
+                    console.warn('JSDelivr failed:', error);
+                }
+            }
+            
+            // Strategy 4: Direct script loading workaround
+            if (!Vapi) {
+                console.log('Trying direct script loading...');
+                Vapi = await loadVAPIDirectly();
+            }
+            
+            // Strategy 5: Use pre-bundled VAPI if available
+            if (!Vapi && window.VapiClass) {
+                console.log('Using pre-loaded VAPI...');
+                Vapi = window.VapiClass;
+            }
+            
+            // Strategy 6: Iframe proxy workaround
+            if (!Vapi) {
+                console.log('Trying iframe proxy workaround...');
+                Vapi = await loadVAPIViaIframe();
+            }
+            
+            if (!Vapi) {
+                throw new Error('Could not load VAPI from any CDN - trying alternative voice solution');
+            }
+
+            console.log('VAPI loaded successfully, initializing...');
+            vapi = new Vapi(vapiPublicKey);
+            
+            // Set up event listeners
+            vapi.on('call-start', () => {
+                console.log('VAPI call started');
+                vapiConnected = true;
+                updateVoiceButtonState(true);
+                vscode.postMessage({
+                    type: 'vapiConnectionStatus',
+                    status: 'connected',
+                    message: 'Voice connection established'
+                });
+            });
+
+            vapi.on('call-end', () => {
+                console.log('VAPI call ended');
+                vapiConnected = false;
+                updateVoiceButtonState(false);
+                vscode.postMessage({
+                    type: 'vapiConnectionStatus',
+                    status: 'disconnected',
+                    message: 'Voice connection ended'
+                });
+            });
+
+            vapi.on('message', (message) => {
+                if (message.type === 'transcript') {
+                    const who = message.role === 'user' ? '🧑 You' : '🤖 Mentor';
+                    const transcript = `${who}: ${message.transcript}`;
+                    console.log('Transcript:', transcript);
+                    
+                    // Send transcript back to extension
+                    vscode.postMessage({
+                        type: 'vapiTranscript',
+                        transcript: transcript,
+                        role: message.role
+                    });
+                }
+            });
+
+            // Since we already have permission, start the call directly
+            await vapi.start(assistantId);
+            
+        } catch (error) {
+            console.error('VAPI connection error:', error);
+            vscode.postMessage({
+                type: 'vapiConnectionStatus',
+                status: 'error',
+                message: error.message || 'Failed to connect to voice service'
+            });
+        }
+    }
+
+    async function stopVAPIConnection() {
+        if (vapi && vapiConnected) {
+            try {
+                await vapi.stop();
+            } catch (error) {
+                console.error('Error stopping VAPI:', error);
+            }
+        }
+        vapiConnected = false;
+        updateVoiceButtonState(false);
     }
 
     // Initialize with Marcus as default active mentor

@@ -64,19 +64,47 @@ export class GitHubService {
             throw new Error('GitHub token not configured. Please set aiMentor.githubToken in settings.');
         }
 
-        const response = await fetch(`https://api.github.com${url}`, {
-            headers: {
-                'Authorization': `token ${this.apiToken}`,
-                'Accept': 'application/vnd.github.v3+json',
-                'User-Agent': 'AI-Debugger-Mentor'
-            }
+        // Use Node.js https module instead of fetch
+        const https = require('https');
+        
+        return new Promise((resolve, reject) => {
+            const options = {
+                hostname: 'api.github.com',
+                path: url,
+                method: 'GET',
+                headers: {
+                    'Authorization': `token ${this.apiToken}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'User-Agent': 'AI-Debugger-Mentor'
+                }
+            };
+
+            const req = https.request(options, (res: any) => {
+                let data = '';
+                
+                res.on('data', (chunk: any) => {
+                    data += chunk;
+                });
+                
+                res.on('end', () => {
+                    if (res.statusCode >= 200 && res.statusCode < 300) {
+                        try {
+                            resolve(JSON.parse(data));
+                        } catch (error) {
+                            reject(new Error('Invalid JSON response from GitHub API'));
+                        }
+                    } else {
+                        reject(new Error(`GitHub API error: ${res.statusCode} ${res.statusMessage}`));
+                    }
+                });
+            });
+
+            req.on('error', (error: any) => {
+                reject(new Error(`GitHub API request failed: ${error.message}`));
+            });
+
+            req.end();
         });
-
-        if (!response.ok) {
-            throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
-        }
-
-        return response.json();
     }
 
     public async getUserProfile(username: string): Promise<GitHubUser> {

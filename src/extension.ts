@@ -34,10 +34,13 @@ export function activate(context: vscode.ExtensionContext) {
     graphiteService = new GraphiteService();
     realtimeAnalyzer = new RealtimeAnalyzer(llmService, voiceService, profileManager);
     codeWatcher = new CodeWatcher(astAnalyzer, llmService);
-    aiMentorProvider = new AIMentorProvider(context.extensionUri, codeWatcher, llmService, profileManager);
+    aiMentorProvider = new AIMentorProvider(context.extensionUri, codeWatcher, llmService, profileManager, voiceService);
     
     // Connect codeWatcher to aiMentorProvider for UI updates
     codeWatcher.setAIMentorProvider(aiMentorProvider);
+    
+    // Connect voiceService to aiMentorProvider for transcript updates
+    voiceService.setAIMentorProvider(aiMentorProvider);
 
     // Register the webview provider
     context.subscriptions.push(
@@ -161,6 +164,41 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
+    const speakToMentorCommand = vscode.commands.registerCommand('aiMentor.speakToMentor', async () => {
+        if (voiceService.isConversationalMode()) {
+            await voiceService.stopConversation();
+        } else {
+            await voiceService.startConversationWithMentor();
+        }
+    });
+
+    const configureVAPICommand = vscode.commands.registerCommand('aiMentor.configureVAPI', async () => {
+        const publicKey = await vscode.window.showInputBox({
+            prompt: 'Enter your VAPI Public Key',
+            placeHolder: 'e.g., 365fc87d-f1cb-46a1-9e20-be85b18aab41',
+            ignoreFocusOut: true
+        });
+
+        if (publicKey) {
+            await vscode.workspace.getConfiguration('aiMentor').update('vapiPublicKey', publicKey, vscode.ConfigurationTarget.Global);
+            
+            const assistantId = await vscode.window.showInputBox({
+                prompt: 'Enter your VAPI Assistant ID',
+                placeHolder: 'e.g., 8026e50f-8bd8-42e6-9f95-6176698aa424',
+                ignoreFocusOut: true
+            });
+
+            if (assistantId) {
+                await vscode.workspace.getConfiguration('aiMentor').update('vapiAssistantId', assistantId, vscode.ConfigurationTarget.Global);
+                vscode.window.showInformationMessage('VAPI settings configured successfully! You can now use voice chat.');
+                
+                // Reinitialize voice service
+                voiceService = new VoiceService();
+                voiceService.setAIMentorProvider(aiMentorProvider);
+            }
+        }
+    });
+
     const manageProfilesCommand = vscode.commands.registerCommand('aiMentor.manageProfiles', async () => {
         const profiles = profileManager.getAllProfiles();
         const activeProfile = profileManager.getActiveProfile();
@@ -207,6 +245,8 @@ export function activate(context: vscode.ExtensionContext) {
         selectProfileCommand,
         createProfileCommand,
         selectMentorCommand,
+        speakToMentorCommand,
+        configureVAPICommand,
         manageProfilesCommand
     );
 

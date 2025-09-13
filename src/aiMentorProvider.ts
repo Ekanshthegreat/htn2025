@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { CodeWatcher } from './codeWatcher';
 import { LLMService, MentorResponse } from './llmService';
 import { ProfileManager } from './profileManager';
+import { VoiceService } from './voiceService';
 
 export class AIMentorProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'aiMentorPanel';
@@ -12,7 +13,8 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
         private readonly _extensionUri: vscode.Uri,
         private codeWatcher: CodeWatcher,
         private llmService: LLMService,
-        private profileManager?: any
+        private profileManager?: any,
+        private voiceService?: VoiceService
     ) {
         // Listen for mentor responses
         this.setupMessageListener();
@@ -25,9 +27,12 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
     ) {
         this._view = webviewView;
 
-        webviewView.webview.options = {
+        this._view.webview.options = {
             enableScripts: true,
-            localResourceRoots: [this._extensionUri]
+            localResourceRoots: [this._extensionUri],
+            // Enable media access for microphone
+            enableCommandUris: true,
+            enableForms: true
         };
 
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
@@ -42,6 +47,18 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'switchProfile':
                     this.switchProfile(data.profileId);
+                    break;
+                case 'startVoiceChat':
+                    this.startVoiceChat();
+                    break;
+                case 'stopVoiceChat':
+                    this.stopVoiceChat();
+                    break;
+                case 'vapiTranscript':
+                    this.handleVapiTranscript(data.transcript, data.role);
+                    break;
+                case 'vapiConnectionStatus':
+                    this.handleVapiConnectionStatus(data.status, data.message);
                     break;
             }
         });
@@ -124,6 +141,93 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
         }
     }
 
+    private async startVoiceChat() {
+        if (this.voiceService) {
+            const success = await this.voiceService.startConversationWithMentor();
+            if (success) {
+                // Update button state in webview
+                this._view?.webview.postMessage({
+                    type: 'voiceStateChanged',
+                    isActive: true
+                });
+            }
+        } else {
+            vscode.window.showErrorMessage('Voice service not available');
+        }
+    }
+
+    private async stopVoiceChat() {
+        if (this.voiceService) {
+            await this.voiceService.stopConversation();
+            // Update button state in webview
+            this._view?.webview.postMessage({
+                type: 'voiceStateChanged',
+                isActive: false
+            });
+        }
+    }
+
+    public addTranscript(transcript: string, role: string) {
+        // Add transcript as a special message type
+        const transcriptMessage: MentorResponse = {
+            message: transcript,
+            type: 'narration',
+            confidence: 1.0
+        };
+        this.addMessage(transcriptMessage);
+    }
+
+    public startVoiceConnection(vapiPublicKey: string, assistantId: string) {
+        // Send VAPI configuration to webview for initialization
+        this._view?.webview.postMessage({
+            type: 'startVAPIConnection',
+            vapiPublicKey: vapiPublicKey,
+            assistantId: assistantId
+        });
+    }
+
+    public stopVoiceConnection() {
+        // Send stop message to webview
+        this._view?.webview.postMessage({
+            type: 'stopVAPIConnection'
+        });
+    }
+
+    private handleVapiTranscript(transcript: string, role: string) {
+        // Add transcript to the chat
+        this.addTranscript(transcript, role);
+    }
+
+    private handleVapiConnectionStatus(status: string, message: string) {
+        // Handle connection status updates from webview
+        if (status === 'connected') {
+            vscode.window.showInformationMessage('🎤 Voice connection established! Start speaking.');
+        } else if (status === 'disconnected') {
+            vscode.window.showInformationMessage('🔇 Voice connection ended.');
+        } else if (status === 'error') {
+            if (message.includes('Microphone access required') || message.includes('permission')) {
+                vscode.window.showErrorMessage(
+                    'Microphone permission required for voice chat. Please allow microphone access when prompted.',
+                    'Try Again',
+                    'Configure VAPI'
+                ).then(choice => {
+                    if (choice === 'Try Again') {
+                        // Retry voice connection
+                        this.startVoiceChat();
+                    } else if (choice === 'Configure VAPI') {
+                        vscode.commands.executeCommand('aiMentor.configureVAPI');
+                    }
+                });
+            } else {
+                vscode.window.showErrorMessage(`Voice connection error: ${message}`, 'Configure VAPI').then(choice => {
+                    if (choice === 'Configure VAPI') {
+                        vscode.commands.executeCommand('aiMentor.configureVAPI');
+                    }
+                });
+            }
+        }
+    }
+
     private _getHtmlForWebview(webview: vscode.Webview) {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.css'));
@@ -132,6 +236,7 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
             <html lang="en">
             <head>
                 <meta charset="UTF-8">
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data: blob:; script-src ${webview.cspSource} https://esm.sh https://unpkg.com https://cdn.jsdelivr.net https://vapi.ai 'unsafe-inline' 'unsafe-eval'; style-src ${webview.cspSource} 'unsafe-inline'; media-src * blob: data:; connect-src https: wss: ws: ${webview.cspSource} https://api.vapi.ai wss://api.vapi.ai; worker-src blob:; child-src blob:;">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <link href="${styleUri}" rel="stylesheet">
                 <title>AI Mentor</title>
@@ -170,7 +275,10 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
 
                     <div class="input-section">
                         <textarea id="codeInput" placeholder="Paste code here for explanation..."></textarea>
-                        <button id="explainBtn" class="btn btn-primary">Explain Code</button>
+                        <div class="button-row">
+                            <button id="explainBtn" class="btn btn-primary">Explain Code</button>
+                            <button id="speakBtn" class="btn btn-voice">🎤 Speak to your mentor</button>
+                        </div>
                     </div>
                 </div>
 
