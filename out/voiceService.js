@@ -74,17 +74,18 @@ class VoiceService {
             const voicePrompt = this.formatForVoice(message, type);
             await this.vapi.start({
                 model: {
-                    provider: 'openai',
-                    model: 'gpt-3.5-turbo',
+                    provider: 'google',
+                    model: 'gemini-pro',
                     messages: [
                         {
                             role: 'system',
-                            content: `You are an AI programming mentor providing voice narration. 
-                            Speak in a clear, friendly, and educational tone. 
+                            content: `You are an AI programming mentor powered by Google Gemini providing voice narration. 
+                            Speak in a clear, friendly, and educational tone using Gemini's natural language capabilities. 
                             Explain code concepts as if you're sitting next to a developer, 
-                            helping them understand their code step by step.
+                            helping them understand their code step by step with Gemini's contextual understanding.
                             Keep explanations concise but thorough.
-                            Use natural speech patterns and avoid reading code verbatim.`
+                            Use natural speech patterns and avoid reading code verbatim.
+                            Leverage Gemini's advanced reasoning to provide insightful explanations.`
                         },
                         {
                             role: 'user',
@@ -169,23 +170,24 @@ class VoiceService {
         try {
             this.currentCall = await this.vapi.start({
                 model: {
-                    provider: 'openai',
-                    model: 'gpt-4',
+                    provider: 'google',
+                    model: 'gemini-pro',
                     messages: [
                         {
                             role: 'system',
-                            content: `You are an expert AI programming mentor with voice capabilities. 
+                            content: `You are an expert AI programming mentor with voice capabilities powered by Google Gemini. 
                             You can see the user's code and help them debug interactively through voice conversation.
                             
                             Key capabilities:
-                            - Analyze code structure and identify bugs
-                            - Explain complex concepts in simple terms
-                            - Guide step-by-step debugging sessions
-                            - Suggest best practices and optimizations
+                            - Analyze code structure and identify bugs using Gemini's advanced reasoning
+                            - Explain complex concepts in simple terms with Gemini's natural language understanding
+                            - Guide step-by-step debugging sessions with contextual awareness
+                            - Suggest best practices and optimizations based on modern development patterns
                             - Respond to voice commands like "explain this function" or "find the bug"
                             
                             Be conversational, encouraging, and educational. Ask clarifying questions when needed.
-                            Keep responses concise but thorough for voice delivery.`
+                            Keep responses concise but thorough for voice delivery.
+                            Leverage Gemini's multimodal capabilities for comprehensive code analysis.`
                         }
                     ]
                 },
@@ -255,27 +257,28 @@ class VoiceService {
         try {
             this.currentCall = await this.vapi.start({
                 model: {
-                    provider: 'openai',
-                    model: 'gpt-4-vision-preview',
+                    provider: 'google',
+                    model: 'gemini-pro-vision',
                     messages: [
                         {
                             role: 'system',
-                            content: `You are a multi-modal AI programming mentor that can:
-                            1. Analyze code through voice conversation
-                            2. Understand visual code patterns and structure
-                            3. Provide real-time feedback on coding practices
-                            4. Guide collaborative debugging sessions
+                            content: `You are a multi-modal AI programming mentor powered by Google Gemini that can:
+                            1. Analyze code through voice conversation using Gemini's advanced reasoning
+                            2. Understand visual code patterns and structure with multimodal capabilities
+                            3. Provide real-time feedback on coding practices using Gemini's contextual understanding
+                            4. Guide collaborative debugging sessions with natural language processing
                             
                             Current context:
                             - Language: ${language}
                             - Code length: ${code.length} characters
                             
-                            You can process both voice input and code context simultaneously.
-                            Provide guidance that combines visual code analysis with conversational interaction.`
+                            You can process both voice input and code context simultaneously using Gemini's multimodal capabilities.
+                            Provide guidance that combines visual code analysis with conversational interaction.
+                            Leverage Gemini's strengths in understanding code patterns and providing contextual explanations.`
                         },
                         {
                             role: 'user',
-                            content: `Here's my current code:\n\`\`\`${language}\n${code}\n\`\`\`\n\nI'd like to start a multi-modal debugging session. Please analyze my code and let me know what we should focus on.`
+                            content: `Here's my current code:\n\`\`\`${language}\n${code}\n\`\`\`\n\nI'd like to start a multi-modal debugging session using Gemini's capabilities. Please analyze my code and let me know what we should focus on.`
                         }
                     ]
                 },
