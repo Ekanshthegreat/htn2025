@@ -582,7 +582,7 @@ export class RealtimeAnalyzer {
         const sentiment = behaviorAnalysis.sentiment;
 
         // High empathy needed - be very supportive
-        if (empathyScore > 70 || sentiment === 'frustrated' || sentiment === 'confused') {
+        if (empathyScore > 70 || behaviorAnalysis.emotionalState === 'frustrated' || behaviorAnalysis.emotionalState === 'confused') {
             return `💙 I understand this can be challenging. ${originalMessage} Take your time - you're doing great!`;
         }
 
@@ -596,8 +596,8 @@ export class RealtimeAnalyzer {
             return `⚡ ${originalMessage}`;
         }
 
-        // Patient approach for overwhelmed users
-        if (approach === 'patient' || behaviorAnalysis.emotionalState === 'overwhelmed') {
+        // Patient approach
+        if (approach === 'patient') {
             return `🌱 Let's work through this step by step. ${originalMessage} No rush!`;
         }
 
@@ -607,16 +607,14 @@ export class RealtimeAnalyzer {
     private getSeverityBasedOnEmpathy(behaviorAnalysis: UserBehaviorAnalysis | null): vscode.DiagnosticSeverity {
         if (!behaviorAnalysis) return vscode.DiagnosticSeverity.Information;
 
-        // For stressed/frustrated users, use gentler severity levels
+        // For frustrated users, use gentler severity levels
         if (behaviorAnalysis.empathyScore > 70 || 
-            behaviorAnalysis.emotionalState === 'stressed' || 
-            behaviorAnalysis.sentiment === 'frustrated') {
+            behaviorAnalysis.emotionalState === 'frustrated') {
             return vscode.DiagnosticSeverity.Hint; // Gentlest level
         }
 
         // For confused users, use information level
-        if (behaviorAnalysis.sentiment === 'confused' || 
-            behaviorAnalysis.emotionalState === 'overwhelmed') {
+        if (behaviorAnalysis.emotionalState === 'confused') {
             return vscode.DiagnosticSeverity.Information;
         }
 

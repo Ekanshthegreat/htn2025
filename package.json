@@ -42,46 +42,6 @@
         "category": "AI Mentor"
       },
       {
-        "command": "aiMentor.startVoiceConversation",
-        "title": "🎤 Start Voice Conversation",
-        "category": "AI Mentor Voice"
-      },
-      {
-        "command": "aiMentor.startMultiModalAgent",
-        "title": "🤖 Start Multi-Modal Agent",
-        "category": "AI Mentor Voice"
-      },
-      {
-        "command": "aiMentor.toggleVoice",
-        "title": "🔊 Toggle Voice Narration",
-        "category": "AI Mentor Voice"
-      },
-      {
-        "command": "aiMentor.toggleConversationalMode",
-        "title": "💬 Toggle Conversational Mode",
-        "category": "AI Mentor Voice"
-      },
-      {
-        "command": "aiMentor.showEngineeringReport",
-        "title": "📊 Show Engineering Report",
-        "category": "AI Mentor Engineering"
-      },
-      {
-        "command": "aiMentor.analyzeEngineeringPractices",
-        "title": "🔍 Analyze Engineering Practices",
-        "category": "AI Mentor"
-      },
-      {
-        "command": "aiMentor.toggleRealtimeAnalysis",
-        "title": "⚡ Toggle Real-time Code Analysis",
-        "category": "AI Mentor"
-      },
-      {
-        "command": "aiMentor.narrateEngineeringPractices",
-        "title": "🎙️ Narrate Engineering Practices",
-        "category": "AI Mentor Engineering"
-      },
-      {
         "command": "aiMentor.selectProfile",
         "title": "👤 Select Mentor Profile",
         "category": "AI Mentor Profiles"
@@ -107,7 +67,7 @@
         {
           "id": "aiMentorPanel",
           "name": "AI Mentor",
-          "when": "aiMentor.active"
+          "icon": "$(robot)"
         }
       ]
     },
@@ -184,9 +144,21 @@
           "type": "string",
           "description": "GitHub personal access token for profile analysis"
         },
-        "aiMentor.genesysApiKey": {
+        "aiMentor.genesysClientId": {
           "type": "string",
-          "description": "Genesys Cloud API key for empathy-driven user behavior analysis"
+          "description": "Genesys Cloud OAuth Client ID"
+        },
+        "aiMentor.genesysClientSecret": {
+          "type": "string",
+          "description": "Genesys Cloud OAuth Client Secret"
+        },
+        "aiMentor.genesysDivision": {
+          "type": "string",
+          "description": "Genesys Cloud Division/Team Code"
+        },
+        "aiMentor.genesysAccessToken": {
+          "type": "string",
+          "description": "Genesys Cloud Access Token (optional - overrides OAuth flow)"
         },
         "aiMentor.genesysEnvironment": {
           "type": "string",

@@ -110,25 +110,31 @@ export class LLMService {
     private getSystemPrompt(messageType?: string): string {
         // Get profile-specific prompt if profile manager is available
         if (this.profileManager) {
-            const activeProfile = this.profileManager.getActiveProfile();
-            let basePrompt = activeProfile.prompts.systemPrompt;
-            
-            // Use specific prompt based on message type
-            switch (messageType) {
-                case 'start_debugging':
-                    basePrompt = activeProfile.prompts.debuggingPrompt;
-                    break;
-                case 'code_changed':
-                    basePrompt = activeProfile.prompts.reviewPrompt;
-                    break;
-                case 'trace_execution':
-                    basePrompt = activeProfile.prompts.explanationPrompt;
-                    break;
-                default:
-                    basePrompt = activeProfile.prompts.systemPrompt;
-            }
-            
-            return `${basePrompt}
+            try {
+                const activeProfile = this.profileManager.getActiveProfile();
+                console.log('Active profile:', activeProfile?.name, activeProfile?.id);
+                
+                if (activeProfile && activeProfile.prompts) {
+                    let basePrompt = activeProfile.prompts.systemPrompt;
+                    
+                    // Use specific prompt based on message type
+                    switch (messageType) {
+                        case 'start_debugging':
+                            basePrompt = activeProfile.prompts.debuggingPrompt;
+                            break;
+                        case 'code_changed':
+                            basePrompt = activeProfile.prompts.reviewPrompt;
+                            break;
+                        case 'trace_execution':
+                            basePrompt = activeProfile.prompts.explanationPrompt;
+                            break;
+                        default:
+                            basePrompt = activeProfile.prompts.systemPrompt;
+                    }
+                    
+                    console.log('Using profile prompt:', basePrompt.substring(0, 100) + '...');
+                    
+                    return `${basePrompt}
 
 Response format should be JSON with:
 {
@@ -138,6 +144,10 @@ Response format should be JSON with:
   "codeSnippets": [{"language": "js", "code": "example"}],
   "type": "narration|warning|suggestion|explanation"
 }`;
+                }
+            } catch (error) {
+                console.error('Error getting active profile:', error);
+            }
         }
 
         // Fallback to default prompt if no profile manager

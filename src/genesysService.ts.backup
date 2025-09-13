@@ -1,0 +1,431 @@
+import * as vscode from 'vscode';
+
+export interface UserBehaviorAnalysis {
+    sentiment: 'positive' | 'negative' | 'neutral';
+    emotionalState: 'frustrated' | 'confident' | 'confused' | 'focused';
+    engagementLevel: 'high' | 'medium' | 'low';
+    topics: string[];
+    patterns: {
+        errorFrequency: number;
+        debuggingTime: number;
+        codeComplexity: 'simple' | 'moderate' | 'complex';
+        workingPattern: 'consistent' | 'burst' | 'sporadic';
+    };
+    empathyScore: number;
+    suggestedApproach: 'supportive' | 'direct' | 'encouraging' | 'patient';
+}
+
+export interface EmpathyAnalysisResult {
+    empathyPrompt: string;
+    developerPersona: string;
+    suggestedTone: 'supportive' | 'direct' | 'encouraging' | 'patient';
+    empathyScore: number;
+}
+
+export interface GitHubEmpathyData {
+    empathyPrompt: string;
+    developerPersona: string;
+    suggestedTone: 'supportive' | 'direct' | 'encouraging' | 'patient';
+    empathyScore: number;
+    analysisMetadata: {
+        profileAnalyzedAt: Date;
+        sentimentScore: number;
+        topicsDetected: string[];
+        developerLevel: 'junior' | 'mid' | 'senior' | 'expert';
+    };
+}
+
+export class GenesysService {
+    private clientId: string | undefined;
+    private clientSecret: string | undefined;
+    private division: string | undefined;
+    private environment: string | undefined;
+    private baseUrl: string = '';
+    private accessToken: string | undefined;
+    private providedToken: string | undefined;
+
+    constructor() {
+        this.loadConfiguration();
+    }
+
+    private loadConfiguration() {
+        const config = vscode.workspace.getConfiguration('aiMentor');
+        this.clientId = config.get<string>('genesysClientId');
+        this.clientSecret = config.get<string>('genesysClientSecret');
+        this.division = config.get<string>('genesysDivision');
+        this.providedToken = config.get<string>('genesysAccessToken');
+        this.environment = config.get<string>('genesysEnvironment', 'mypurecloud.com');
+        this.baseUrl = `https://api.${this.environment}`;
+    }
+
+    private async authenticate(): Promise<string> {
+        // Use provided token if available
+        if (this.providedToken) {
+            console.log('Using provided Genesys access token');
+            return this.providedToken;
+        }
+
+        // Skip OAuth authentication and use fallback analysis
+        console.log('No Genesys token provided, using fallback analysis');
+        throw new Error('Genesys authentication not configured - using fallback analysis');
+    }
+
+    private async makeGenesysRequest(endpoint: string, options: RequestInit = {}): Promise<any> {
+        const token = await this.authenticate();
+        
+        const response = await fetch(`${this.baseUrl}${endpoint}`, {
+            ...options,
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                ...options.headers
+            }
+        });
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                console.warn('Genesys token expired or invalid, using fallback analysis');
+                throw new Error('Genesys token expired - using fallback analysis');
+            }
+            throw new Error(`Genesys API error: ${response.status} ${response.statusText}`);
+        }
+
+        return response.json();
+    }
+
+    public async analyzeSentiment(text: string): Promise<{ sentiment: number; confidence: number }> {
+        try {
+            // Test authentication with a simple API call first
+            const response = await this.makeGenesysRequest('/api/v2/authorization/roles', {
+                method: 'GET'
+            });
+
+            console.log('Genesys API connection successful:', response ? 'Connected' : 'Failed');
+            
+            // For now, use intelligent text analysis based on GitHub profile content
+            // This provides meaningful sentiment analysis for developer profiles
+            return this.fallbackSentimentAnalysis(text);
+        } catch (error) {
+            console.warn('Genesys sentiment analysis failed, using fallback:', error);
+            return this.fallbackSentimentAnalysis(text);
+        }
+    }
+
+    public async detectTopics(text: string): Promise<Array<{ topic: string; confidence: number }>> {
+        try {
+            // Use fallback topic detection which provides meaningful results for GitHub profiles
+            return this.fallbackTopicDetection(text);
+        } catch (error) {
+            console.warn('Genesys topic detection failed, using fallback:', error);
+            return this.fallbackTopicDetection(text);
+        }
+    }
+
+    public async analyzeGitHubProfileForEmpathy(
+        githubProfile: {
+            user: any;
+            repositories: any[];
+            commits: any[];
+            languages: Record<string, number>;
+            experience: string;
+            workingStyle: string;
+            expertise: string[];
+        }
+    ): Promise<EmpathyAnalysisResult> {
+        try {
+            // Use fallback analysis to avoid memory issues and API failures
+            return this.fallbackGitHubAnalysis(githubProfile);
+
+        } catch (error) {
+            console.error('Genesys GitHub analysis failed:', error);
+            return this.fallbackGitHubAnalysis(githubProfile);
+        }
+    }
+
+    private createBehaviorText(
+        codeContent: string,
+        userActions: Array<{ action: string; timestamp: Date; context?: any }>,
+        sessionData: { duration: number; errorCount: number; completions: number }
+    ): string {
+        const recentActions = userActions.slice(-10).map(a => a.action).join('. ');
+        const codeSnippet = codeContent.slice(0, 500); // First 500 chars
+        
+        return `User coding session: ${recentActions}. Code context: ${codeSnippet}. Session stats: ${sessionData.errorCount} errors, ${sessionData.completions} completions in ${Math.round(sessionData.duration / 60)} minutes.`;
+    }
+
+    private analyzePatterns(
+        userActions: Array<{ action: string; timestamp: Date; context?: any }>,
+        sessionData: { duration: number; errorCount: number; completions: number }
+    ): UserBehaviorAnalysis['patterns'] {
+        const typingEvents = userActions.filter(a => a.action.includes('typing') || a.action.includes('edit'));
+        const avgTypingInterval = typingEvents.length > 1 
+            ? (typingEvents[typingEvents.length - 1].timestamp.getTime() - typingEvents[0].timestamp.getTime()) / typingEvents.length
+            : 1000;
+
+        return {
+            errorFrequency: sessionData.errorCount,
+            debuggingTime: sessionData.duration,
+            codeComplexity: this.assessCodeComplexity(userActions),
+            workingPattern: this.analyzeWorkingPattern(userActions)
+        };
+    }
+
+    private assessCodeComplexity(userActions: Array<{ action: string; timestamp: Date; context?: any }>): 'simple' | 'moderate' | 'complex' {
+        const complexPatterns = userActions.filter(a => 
+            a.action.includes('async') || 
+            a.action.includes('class') || 
+            a.action.includes('interface') ||
+            a.action.includes('generic')
+        ).length;
+
+        return complexPatterns > 5 ? 'complex' : complexPatterns > 2 ? 'moderate' : 'simple';
+    }
+
+    private analyzeWorkingPattern(userActions: Array<{ action: string; timestamp: Date; context?: any }>): 'consistent' | 'burst' | 'sporadic' {
+        const actionsPerMinute = userActions.length / (userActions[userActions.length - 1].timestamp.getTime() - userActions[0].timestamp.getTime()) * 60;
+        
+        if (actionsPerMinute > 5) return 'consistent';
+        if (actionsPerMinute > 2) return 'burst';
+        return 'sporadic';
+    }
+
+    private determineEmotionalState(
+        sentiment: { sentiment: number; confidence: number },
+        patterns: UserBehaviorAnalysis['patterns']
+    ): UserBehaviorAnalysis['emotionalState'] {
+        if (sentiment.sentiment < -0.5 && patterns.errorFrequency > 10) return 'frustrated';
+        if (sentiment.sentiment > 0.5 && patterns.workingPattern === 'consistent') return 'confident';
+        if (patterns.errorFrequency > 5 && patterns.workingPattern === 'sporadic') return 'confused';
+        if (sentiment.sentiment > 0.3) return 'focused';
+        return 'frustrated';
+    }
+
+    private calculateEmpathyScore(
+        sentiment: { sentiment: number; confidence: number },
+        patterns: UserBehaviorAnalysis['patterns'],
+        sessionData: { duration: number; errorCount: number; completions: number }
+    ): number {
+        let score = 50; // Base empathy score
+
+        // Increase empathy for negative sentiment
+        if (sentiment.sentiment < -0.3) score += 30;
+        else if (sentiment.sentiment < 0) score += 15;
+
+        // Increase empathy for high error frequency
+        if (patterns.errorFrequency > 10) score += 25;
+        else if (patterns.errorFrequency > 5) score += 10;
+
+        // Increase empathy for long struggling sessions
+        if (sessionData.duration > 3600 && sessionData.completions < 3) score += 20;
+
+        // Decrease empathy for positive, productive sessions
+        if (sentiment.sentiment > 0.3 && patterns.workingPattern === 'consistent') score -= 20;
+
+        return Math.max(0, Math.min(100, score));
+    }
+
+    private suggestApproach(
+        sentiment: { sentiment: number; confidence: number },
+        emotionalState: UserBehaviorAnalysis['emotionalState'],
+        empathyScore: number
+    ): UserBehaviorAnalysis['suggestedApproach'] {
+        if (empathyScore > 70 || emotionalState === 'frustrated') {
+            return 'patient';
+        }
+        if (sentiment.sentiment > 0.3 && emotionalState === 'focused') {
+            return 'direct';
+        }
+        if (empathyScore > 40 || sentiment.sentiment < 0) {
+            return 'encouraging';
+        }
+        return 'supportive';
+    }
+
+    private mapSentimentToCategory(sentiment: number): UserBehaviorAnalysis['sentiment'] {
+        if (sentiment < -0.5) return 'negative';
+        if (sentiment > 0.3) return 'positive';
+        if (sentiment < -0.1) return 'negative';
+        return 'neutral';
+    }
+
+    private determineEngagementLevel(
+        patterns: UserBehaviorAnalysis['patterns'],
+        sessionData: { duration: number; errorCount: number; completions: number }
+    ): UserBehaviorAnalysis['engagementLevel'] {
+        const actionsPerMinute = sessionData.completions / (sessionData.duration / 60);
+        
+        if (actionsPerMinute > 5 && patterns.workingPattern !== 'sporadic') return 'high';
+        if (actionsPerMinute > 2 || patterns.workingPattern === 'consistent') return 'medium';
+        return 'low';
+    }
+
+    // Fallback methods for when Genesys API is unavailable
+    private fallbackSentimentAnalysis(text: string): { sentiment: number; confidence: number } {
+        const negativeWords = ['error', 'bug', 'fail', 'wrong', 'issue', 'problem', 'stuck'];
+        const positiveWords = ['work', 'good', 'success', 'complete', 'fix', 'solve'];
+        
+        const words = text.toLowerCase().split(/\s+/);
+        const negCount = words.filter(w => negativeWords.some(neg => w.includes(neg))).length;
+        const posCount = words.filter(w => positiveWords.some(pos => w.includes(pos))).length;
+        
+        const sentiment = (posCount - negCount) / Math.max(words.length / 10, 1);
+        return { sentiment: Math.max(-1, Math.min(1, sentiment)), confidence: 0.6 };
+    }
+
+    private fallbackTopicDetection(text: string): Array<{ topic: string; confidence: number }> {
+        const topics = [
+            { keywords: ['function', 'method', 'call'], topic: 'functions' },
+            { keywords: ['variable', 'const', 'let', 'var'], topic: 'variables' },
+            { keywords: ['class', 'object', 'instance'], topic: 'object-oriented' },
+            { keywords: ['async', 'await', 'promise'], topic: 'asynchronous' },
+            { keywords: ['error', 'exception', 'try', 'catch'], topic: 'error-handling' },
+            { keywords: ['test', 'spec', 'assert'], topic: 'testing' }
+        ];
+
+        const lowerText = text.toLowerCase();
+        return topics
+            .map(({ keywords, topic }) => ({
+                topic,
+                confidence: keywords.filter(k => lowerText.includes(k)).length / keywords.length
+            }))
+            .filter(t => t.confidence > 0)
+            .sort((a, b) => b.confidence - a.confidence)
+            .slice(0, 3);
+    }
+
+    private fallbackBehaviorAnalysis(
+        codeContent: string,
+        userActions: Array<{ action: string; timestamp: Date; context?: any }>,
+        sessionData: { duration: number; errorCount: number; completions: number }
+    ): UserBehaviorAnalysis {
+        const behaviorText = this.createBehaviorText(codeContent, userActions, sessionData);
+        const sentiment = this.fallbackSentimentAnalysis(behaviorText);
+        const patterns = this.analyzePatterns(userActions, sessionData);
+        
+        return {
+            sentiment: this.mapSentimentToCategory(sentiment.sentiment),
+            emotionalState: this.determineEmotionalState(sentiment, patterns),
+            engagementLevel: this.determineEngagementLevel(patterns, sessionData),
+            topics: this.fallbackTopicDetection(behaviorText).map(t => t.topic),
+            patterns,
+            empathyScore: this.calculateEmpathyScore(sentiment, patterns, sessionData),
+            suggestedApproach: this.suggestApproach(
+                sentiment, 
+                this.determineEmotionalState(sentiment, patterns),
+                this.calculateEmpathyScore(sentiment, patterns, sessionData)
+            )
+        };
+    }
+
+    private fallbackGitHubAnalysis(githubProfile: any): EmpathyAnalysisResult {
+        const level = this.assessDeveloperLevel(githubProfile);
+        const empathyScore = this.calculateEmpathyScore(githubProfile);
+        const workingPattern = this.analyzeWorkingPattern(githubProfile);
+        
+        return {
+            empathyPrompt: this.generateEmpathyPrompt(githubProfile, level, empathyScore),
+            developerPersona: this.createDeveloperPersona(githubProfile, workingPattern),
+            suggestedTone: this.suggestToneFromProfile(empathyScore, level),
+            empathyScore
+        };
+    }
+
+    private assessDeveloperLevel(githubProfile: any): 'junior' | 'mid' | 'senior' | 'expert' {
+        const repoCount = githubProfile?.repositories?.length || 0;
+        const commitCount = githubProfile?.commits?.length || 0;
+        
+        if (repoCount < 5 && commitCount < 50) return 'junior';
+        if (repoCount < 15 && commitCount < 200) return 'mid';
+        if (repoCount < 30 && commitCount < 500) return 'senior';
+        return 'expert';
+    }
+
+    private calculateEmpathyScore(githubProfile: any): number {
+        let score = 50;
+        const level = this.assessDeveloperLevel(githubProfile);
+        
+        if (level === 'junior') score += 30;
+        else if (level === 'mid') score += 15;
+        else if (level === 'expert') score -= 10;
+
+        const repositories = githubProfile?.repositories || [];
+        const commits = githubProfile?.commits || [];
+        if (repositories.length < 3) score += 20;
+        if (commits.length < 20) score += 15;
+
+        return Math.max(0, Math.min(100, score));
+    }
+
+    private analyzeWorkingPattern(githubProfile: any): 'consistent' | 'burst' | 'sporadic' | 'methodical' {
+        const repoCount = githubProfile?.repositories?.length || 0;
+        const commitCount = githubProfile?.commits?.length || 0;
+        
+        if (commitCount > repoCount * 20) return 'consistent';
+        if (commitCount > repoCount * 10) return 'methodical';
+        if (repoCount > 10 && commitCount < repoCount * 5) return 'burst';
+        return 'sporadic';
+    }
+
+    private generateEmpathyPrompt(githubProfile: any, level: string, empathyScore: number): string {
+        const languages = githubProfile?.languages ? Object.keys(githubProfile.languages).slice(0, 3).join(', ') : 'various technologies';
+        let basePrompt = `You are mentoring a ${level}-level developer who primarily works with ${languages}.`;
+        
+        if (empathyScore > 70) {
+            basePrompt += ` This developer may be new to some concepts, so be extra patient and supportive. Break down complex ideas into digestible steps.`;
+        } else if (empathyScore > 40) {
+            basePrompt += ` This developer has some experience but may benefit from gentle guidance. Provide clear explanations with examples.`;
+        } else {
+            basePrompt += ` This developer is experienced and prefers direct, technical guidance. Focus on efficiency and advanced concepts.`;
+        }
+
+        return basePrompt;
+    }
+
+    private createDeveloperPersona(githubProfile: any, workingPattern: string): string {
+        const level = this.assessDeveloperLevel(githubProfile);
+        const topLang = githubProfile?.languages ? Object.keys(githubProfile.languages)[0] || 'JavaScript' : 'JavaScript';
+        const expertise = githubProfile?.expertise ? githubProfile.expertise.slice(0, 2).join(' and ') : 'various technologies';
+        
+        return `${level.charAt(0).toUpperCase() + level.slice(1)} ${topLang} developer with ${workingPattern} working patterns. Expertise in ${expertise}.`;
+    }
+
+    private suggestToneFromProfile(empathyScore: number, developerLevel: string): 'supportive' | 'direct' | 'encouraging' | 'patient' {
+        if (empathyScore > 70 || developerLevel === 'junior') return 'patient';
+        if (empathyScore > 50) return 'supportive';
+        if (developerLevel === 'expert') return 'direct';
+        return 'encouraging';
+    }
+
+    // Keep the original method for backward compatibility
+    public async analyzeUserBehavior(
+        codeContent: string,
+        userActions: Array<{ action: string; timestamp: Date; context?: any }>,
+        sessionData: { duration: number; errorCount: number; completions: number }
+    ): Promise<UserBehaviorAnalysis> {
+        try {
+            const behaviorText = this.createBehaviorText(codeContent, userActions, sessionData);
+            const [sentimentResult, topics] = await Promise.all([
+                this.analyzeSentiment(behaviorText),
+                this.detectTopics(behaviorText)
+            ]);
+
+            const patterns = this.analyzePatterns(userActions, sessionData);
+            const emotionalState = this.determineEmotionalState(sentimentResult, patterns);
+            const empathyScore = this.calculateEmpathyScore(sentimentResult, patterns, sessionData);
+            
+            return {
+                sentiment: this.mapSentimentToCategory(sentimentResult.sentiment),
+                emotionalState,
+                engagementLevel: this.determineEngagementLevel(patterns, sessionData),
+                topics: topics.map(t => t.topic),
+                patterns,
+                empathyScore,
+                suggestedApproach: this.suggestApproach(sentimentResult, emotionalState, empathyScore)
+            };
+
+        } catch (error) {
+            console.error('Genesys behavior analysis failed:', error);
+            return this.fallbackBehaviorAnalysis(codeContent, userActions, sessionData);
+        }
+    }
+}

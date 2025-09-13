@@ -35,6 +35,9 @@ export function activate(context: vscode.ExtensionContext) {
     realtimeAnalyzer = new RealtimeAnalyzer(llmService, voiceService);
     codeWatcher = new CodeWatcher(astAnalyzer, llmService);
     aiMentorProvider = new AIMentorProvider(context.extensionUri, codeWatcher, llmService, profileManager);
+    
+    // Connect codeWatcher to aiMentorProvider for UI updates
+    codeWatcher.setAIMentorProvider(aiMentorProvider);
 
     // Register the webview provider
     context.subscriptions.push(
@@ -81,71 +84,6 @@ export function activate(context: vscode.ExtensionContext) {
         await codeWatcher.startExecutionTrace(document.getText(), document.languageId);
     });
 
-    // New VAPI Voice AI Commands
-    const startVoiceConversationCommand = vscode.commands.registerCommand('aiMentor.startVoiceConversation', async () => {
-        await voiceService.startConversationalDebugging();
-    });
-
-    const startMultiModalAgentCommand = vscode.commands.registerCommand('aiMentor.startMultiModalAgent', async () => {
-        await voiceService.startMultiModalAgent();
-    });
-
-    const toggleVoiceCommand = vscode.commands.registerCommand('aiMentor.toggleVoice', async () => {
-        await voiceService.toggleVoice();
-    });
-
-    const toggleConversationalModeCommand = vscode.commands.registerCommand('aiMentor.toggleConversationalMode', async () => {
-        await voiceService.toggleConversationalMode();
-    });
-
-    // Register real-time analysis toggle
-    const toggleRealtimeAnalysisCommand = vscode.commands.registerCommand('aiMentor.toggleRealtimeAnalysis', () => {
-        const config = vscode.workspace.getConfiguration('aiMentor');
-        const enabled = config.get<boolean>('realtimeAnalysis', true);
-        config.update('realtimeAnalysis', !enabled, vscode.ConfigurationTarget.Global);
-        
-        if (!enabled) {
-            // Enable real-time analysis
-            realtimeAnalyzer.enable();
-            vscode.window.showInformationMessage('🤖 AI Mentor real-time analysis ENABLED - watching your code!');
-        } else {
-            // Disable real-time analysis
-            realtimeAnalyzer.disable();
-            vscode.window.showInformationMessage('⏸️ AI Mentor real-time analysis DISABLED');
-        }
-    });
-
-    // Register engineering practices commands
-    const showEngineeringReportCommand = vscode.commands.registerCommand('aiMentor.showEngineeringReport', async () => {
-        try {
-            const report = await graphiteService.generateEngineeringReport();
-            const panel = vscode.window.createWebviewPanel(
-                'engineeringReport',
-                '📊 Engineering Practices Report',
-                vscode.ViewColumn.One,
-                { enableScripts: true }
-            );
-            panel.webview.html = report;
-        } catch (error) {
-            vscode.window.showErrorMessage(`Failed to generate engineering report: ${error}`);
-        }
-    });
-
-    const analyzeEngineeringPracticesCommand = vscode.commands.registerCommand('aiMentor.analyzeEngineeringPractices', async () => {
-        const practices = await graphiteService.analyzeEngineeringPractices();
-        const implementedCount = practices.filter(p => p.implemented).length;
-        vscode.window.showInformationMessage(
-            `Engineering Analysis: ${implementedCount}/${practices.length} practices implemented. Use "Show Engineering Report" for details.`
-        );
-    });
-
-    const narrateEngineeringPracticesCommand = vscode.commands.registerCommand('aiMentor.narrateEngineeringPractices', async () => {
-        const narrations = await graphiteService.narrateEngineeringPractices();
-        for (const narration of narrations) {
-            await voiceService.narrateCodeFlow(narration, 'explanation');
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Pause between narrations
-        }
-    });
 
     // Profile Management Commands
     const selectProfileCommand = vscode.commands.registerCommand('aiMentor.selectProfile', async () => {
@@ -205,20 +143,29 @@ export function activate(context: vscode.ExtensionContext) {
             
             // Get GitHub data from GitHubService
             const githubData = await githubService.analyzeProfile(username);
+            console.log('Debug: GitHub data received:', githubData);
             
             // Use ProfileManager's new method that integrates with Genesys
             const profileId = await profileManager.createProfileFromGitHub(username, githubData);
+            console.log('Debug: Profile created with ID:', profileId);
+            
+            // Verify profile was saved
+            const savedProfile = profileManager.getProfile(profileId);
+            console.log('Debug: Saved profile:', savedProfile ? 'Found' : 'Not found');
             
             vscode.window.showInformationMessage(
                 `GitHub profile imported with empathy analysis! Profile ID: ${profileId}`,
-                'Set as Active'
+                'Set as Active', 'View Profiles'
             ).then(selection => {
                 if (selection === 'Set as Active') {
                     profileManager.setActiveProfile(profileId);
                     vscode.window.showInformationMessage(`Active profile set to: ${username}`);
+                } else if (selection === 'View Profiles') {
+                    vscode.commands.executeCommand('aiMentor.manageProfiles');
                 }
             });
         } catch (error) {
+            console.error('Debug: GitHub import error:', error);
             vscode.window.showErrorMessage(`Failed to import GitHub profile: ${error}`);
         }
     });
@@ -226,6 +173,14 @@ export function activate(context: vscode.ExtensionContext) {
     const manageProfilesCommand = vscode.commands.registerCommand('aiMentor.manageProfiles', async () => {
         const profiles = profileManager.getAllProfiles();
         const activeProfile = profileManager.getActiveProfile();
+        
+        console.log('Debug: Found profiles:', profiles.length);
+        console.log('Debug: Profile details:', profiles.map(p => ({ id: p.id, name: p.name })));
+        
+        if (profiles.length === 0) {
+            vscode.window.showInformationMessage('No profiles found. Try importing a GitHub profile first.');
+            return;
+        }
         
         const items = profiles.map(profile => ({
             label: profile.name,
@@ -258,20 +213,11 @@ export function activate(context: vscode.ExtensionContext) {
         deactivateCommand,
         startDebuggingCommand,
         traceExecutionCommand,
-        startVoiceConversationCommand,
-        startMultiModalAgentCommand,
-        toggleVoiceCommand,
-        toggleConversationalModeCommand,
-        toggleRealtimeAnalysisCommand,
-        showEngineeringReportCommand,
-        analyzeEngineeringPracticesCommand,
-        narrateEngineeringPracticesCommand,
         selectProfileCommand,
         createProfileCommand,
         importGithubProfileCommand,
         manageProfilesCommand
     );
-    context.subscriptions.push(narrateEngineeringPracticesCommand);
 
     // Auto-activate on supported languages
     const activeEditor = vscode.window.activeTextEditor;

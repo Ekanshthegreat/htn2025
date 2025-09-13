@@ -159,6 +159,16 @@ export class ProfileManager {
         githubData: any,
         name?: string
     ): Promise<string> {
+        // Check if profile already exists for this user
+        const existingProfile = Array.from(this.profiles.values()).find(
+            profile => profile.name === githubUsername && profile.id.startsWith('github-')
+        );
+        
+        if (existingProfile) {
+            console.log(`Profile already exists for ${githubUsername}: ${existingProfile.id}`);
+            return existingProfile.id;
+        }
+        
         const profileId = `github-${githubUsername}-${Date.now()}`;
         
         // Use Genesys to analyze GitHub profile for empathy-driven prompts
@@ -177,6 +187,14 @@ export class ProfileManager {
             };
         }
 
+        // Create personalized prompts that make the AI act like the user
+        const personalizedPrompts = {
+            systemPrompt: `You are ${githubUsername}, an experienced developer. You're mentoring someone by sharing your coding knowledge and experience. ${empathyData.empathyPrompt} Use your personal coding style and preferences when giving advice. Speak as if you're the developer whose GitHub profile this is based on.`,
+            reviewPrompt: `As ${githubUsername}, review this code based on your experience and coding standards. Share insights from your own development journey and suggest improvements that align with your coding philosophy.`,
+            debuggingPrompt: `As ${githubUsername}, help debug this issue using your problem-solving approach. Draw from your experience with similar problems and guide them through your debugging methodology.`,
+            explanationPrompt: `As ${githubUsername}, explain this code in your own style. Use examples and analogies that reflect your development experience and teaching approach.`
+        };
+
         const newProfile: MentorProfile = {
             id: profileId,
             name: name || githubUsername,
@@ -185,10 +203,10 @@ export class ProfileManager {
                 communicationStyle: empathyData.suggestedTone === 'direct' ? 'direct' : 'supportive',
                 feedbackApproach: empathyData.empathyScore > 70 ? 'encouraging' : 'analytical',
                 expertise: githubData.expertise || ['general programming'],
-                focusAreas: ['code review', 'best practices'],
+                focusAreas: githubData.focusAreas || ['code review', 'best practices'],
                 responseLength: empathyData.empathyScore > 70 ? 'detailed' : 'moderate'
             },
-            codeStylePreferences: {
+            codeStylePreferences: githubData.codeStylePreferences || {
                 indentStyle: 'spaces',
                 indentSize: 2,
                 maxLineLength: 80,
@@ -197,12 +215,7 @@ export class ProfileManager {
                 trailingCommas: true,
                 bracketSpacing: true
             },
-            prompts: {
-                systemPrompt: empathyData.empathyPrompt,
-                reviewPrompt: `${empathyData.empathyPrompt} Review this code with empathy and understanding.`,
-                debuggingPrompt: `${empathyData.empathyPrompt} Help debug this issue patiently.`,
-                explanationPrompt: `${empathyData.empathyPrompt} Explain this code clearly.`
-            },
+            prompts: personalizedPrompts,
             empathyData,
             lastUpdated: new Date(),
             isActive: false

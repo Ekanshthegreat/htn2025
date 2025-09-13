@@ -197,7 +197,7 @@
         profiles.forEach(profile => {
             const option = document.createElement('option');
             option.value = profile.id;
-            option.textContent = `${profile.name} (${profile.role})`;
+            option.textContent = `${profile.name}${profile.githubUsername ? ` (@${profile.githubUsername})` : ''}`;
             if (profile.id === activeProfileId) {
                 option.selected = true;
             }

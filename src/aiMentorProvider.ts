@@ -45,6 +45,11 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                     break;
             }
         });
+
+        // Send initial profile data when webview is ready
+        setTimeout(() => {
+            this.updateWebview();
+        }, 100);
     }
 
     private setupMessageListener() {
@@ -66,14 +71,21 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
 
             // Also send profile data if available
             if (this.profileManager) {
-                const profiles = this.profileManager.getAllProfiles();
-                const activeProfile = this.profileManager.getActiveProfile();
-                
-                this._view.webview.postMessage({
-                    type: 'updateProfiles',
-                    profiles: profiles,
-                    activeProfileId: activeProfile.id
-                });
+                try {
+                    const profiles = this.profileManager.getAllProfiles();
+                    const activeProfile = this.profileManager.getActiveProfile();
+                    
+                    console.log('Sending profiles to webview:', profiles.length, 'profiles');
+                    console.log('Active profile:', activeProfile?.name);
+                    
+                    this._view.webview.postMessage({
+                        type: 'updateProfiles',
+                        profiles: profiles,
+                        activeProfileId: activeProfile?.id
+                    });
+                } catch (error) {
+                    console.error('Error updating webview with profiles:', error);
+                }
             }
         }
     }
