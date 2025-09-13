@@ -69,11 +69,21 @@
       {
         "command": "aiMentor.analyzeEngineeringPractices",
         "title": "🔍 Analyze Engineering Practices",
-        "category": "AI Mentor Engineering"
+        "category": "AI Mentor"
+      },
+      {
+        "command": "aiMentor.toggleRealtimeAnalysis",
+        "title": "⚡ Toggle Real-time Code Analysis",
+        "category": "AI Mentor"
       },
       {
         "command": "aiMentor.narrateEngineeringPractices",
         "title": "🎙️ Narrate Engineering Practices",
+        "category": "AI Mentor Engineering"
+      },
+      {
+        "command": "aiMentor.showEngineeringReport",
+        "title": "📊 Show Engineering Report",
         "category": "AI Mentor Engineering"
       }
     ],
