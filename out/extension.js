@@ -31,21 +31,27 @@ const astAnalyzer_1 = require("./astAnalyzer");
 const llmService_1 = require("./llmService");
 const voiceService_1 = require("./voiceService");
 const graphiteService_1 = require("./graphiteService");
+const profileManager_1 = require("./profileManager");
+const githubService_1 = require("./githubService");
 let aiMentorProvider;
 let codeWatcher;
 let astAnalyzer;
 let llmService;
 let voiceService;
 let graphiteService;
+let profileManager;
+let githubService;
 function activate(context) {
     console.log('AI Debugger Mentor is now active!');
     // Initialize services
-    llmService = new llmService_1.LLMService();
+    profileManager = new profileManager_1.ProfileManager(context);
+    githubService = new githubService_1.GitHubService();
+    llmService = new llmService_1.LLMService(profileManager);
     astAnalyzer = new astAnalyzer_1.ASTAnalyzer();
     voiceService = new voiceService_1.VoiceService();
     graphiteService = new graphiteService_1.GraphiteService();
     codeWatcher = new codeWatcher_1.CodeWatcher(astAnalyzer, llmService);
-    aiMentorProvider = new aiMentorProvider_1.AIMentorProvider(context.extensionUri, codeWatcher, llmService);
+    aiMentorProvider = new aiMentorProvider_1.AIMentorProvider(context.extensionUri, codeWatcher, llmService, profileManager);
     // Register the webview provider
     context.subscriptions.push(vscode.window.registerWebviewViewProvider('aiMentorPanel', aiMentorProvider));
     // Register commands
@@ -109,7 +115,119 @@ function activate(context) {
             await new Promise(resolve => setTimeout(resolve, 2000)); // Pause between narrations
         }
     });
-    context.subscriptions.push(activateCommand, deactivateCommand, startDebuggingCommand, traceExecutionCommand, startVoiceConversationCommand, startMultiModalAgentCommand, toggleVoiceCommand, toggleConversationalModeCommand, showEngineeringReportCommand, analyzeEngineeringPracticesCommand, narrateEngineeringPracticesCommand);
+    // Profile Management Commands
+    const selectProfileCommand = vscode.commands.registerCommand('aiMentor.selectProfile', async () => {
+        const profiles = profileManager.getAllProfiles();
+        const activeProfile = profileManager.getActiveProfile();
+        const items = profiles.map(profile => ({
+            label: profile.name,
+            description: `${profile.role} - ${profile.githubUsername || 'Built-in'}`,
+            detail: profile.id === activeProfile.id ? '$(check) Currently Active' : '',
+            profile: profile
+        }));
+        const selected = await vscode.window.showQuickPick(items, {
+            placeHolder: 'Select a mentor profile',
+            matchOnDescription: true
+        });
+        if (selected && selected.profile.id !== activeProfile.id) {
+            await profileManager.setActiveProfile(selected.profile.id);
+            vscode.window.showInformationMessage(`Switched to mentor profile: ${selected.profile.name}`);
+        }
+    });
+    const createProfileCommand = vscode.commands.registerCommand('aiMentor.createProfile', async () => {
+        const name = await vscode.window.showInputBox({
+            prompt: 'Enter a name for the new mentor profile',
+            placeHolder: 'e.g., Senior React Developer'
+        });
+        if (!name)
+            return;
+        const roleItems = [
+            { label: 'Boss', value: 'boss' },
+            { label: 'Staff Engineer', value: 'staff-engineer' },
+            { label: 'Senior Developer', value: 'senior-dev' },
+            { label: 'Tech Lead', value: 'tech-lead' },
+            { label: 'Mentor', value: 'mentor' },
+            { label: 'Custom', value: 'custom' }
+        ];
+        const selectedRole = await vscode.window.showQuickPick(roleItems, {
+            placeHolder: 'Select the mentor role'
+        });
+        if (!selectedRole)
+            return;
+        const profileId = `custom-${Date.now()}`;
+        const defaultProfile = profileManager.getProfile('default');
+        profileManager.addProfile({
+            ...defaultProfile,
+            id: profileId,
+            name: name,
+            role: selectedRole.value,
+            lastUpdated: new Date(),
+            isActive: false
+        });
+        vscode.window.showInformationMessage(`Created new mentor profile: ${name}`);
+    });
+    const importGithubProfileCommand = vscode.commands.registerCommand('aiMentor.importGithubProfile', async () => {
+        const username = await vscode.window.showInputBox({
+            prompt: 'Enter GitHub username to import',
+            placeHolder: 'e.g., octocat'
+        });
+        if (!username)
+            return;
+        const roleItems = [
+            { label: 'Boss', value: 'boss' },
+            { label: 'Staff Engineer', value: 'staff-engineer' },
+            { label: 'Senior Developer', value: 'senior-dev' },
+            { label: 'Tech Lead', value: 'tech-lead' },
+            { label: 'Mentor', value: 'mentor' }
+        ];
+        const selectedRole = await vscode.window.showQuickPick(roleItems, {
+            placeHolder: 'What role should this mentor have?'
+        });
+        if (!selectedRole)
+            return;
+        try {
+            vscode.window.showInformationMessage(`Analyzing GitHub profile: ${username}...`);
+            const profileData = await githubService.createProfileFromGitHub(username, selectedRole.value);
+            const profileId = `github-${username}-${Date.now()}`;
+            profileManager.addProfile({
+                id: profileId,
+                lastUpdated: new Date(),
+                isActive: false,
+                ...profileData
+            });
+            vscode.window.showInformationMessage(`Successfully imported GitHub profile: ${username}`);
+        }
+        catch (error) {
+            vscode.window.showErrorMessage(`Failed to import GitHub profile: ${error}`);
+        }
+    });
+    const manageProfilesCommand = vscode.commands.registerCommand('aiMentor.manageProfiles', async () => {
+        const profiles = profileManager.getAllProfiles();
+        const activeProfile = profileManager.getActiveProfile();
+        const items = profiles.map(profile => ({
+            label: profile.name,
+            description: `${profile.role} - ${profile.githubUsername || 'Built-in'}`,
+            detail: profile.id === activeProfile.id ? '$(check) Active' : '',
+            buttons: profile.id !== 'default' ? [
+                {
+                    iconPath: new vscode.ThemeIcon('trash'),
+                    tooltip: 'Delete Profile'
+                }
+            ] : undefined,
+            profile: profile
+        }));
+        const selected = await vscode.window.showQuickPick(items, {
+            placeHolder: 'Manage mentor profiles (Select to activate, click trash to delete)',
+            matchOnDescription: true
+        });
+        if (selected) {
+            if (selected.profile.id !== activeProfile.id) {
+                await profileManager.setActiveProfile(selected.profile.id);
+                vscode.window.showInformationMessage(`Activated profile: ${selected.profile.name}`);
+            }
+        }
+    });
+    context.subscriptions.push(activateCommand, deactivateCommand, startDebuggingCommand, traceExecutionCommand, startVoiceConversationCommand, startMultiModalAgentCommand, toggleVoiceCommand, toggleConversationalModeCommand, showEngineeringReportCommand, analyzeEngineeringPracticesCommand, narrateEngineeringPracticesCommand, selectProfileCommand, createProfileCommand, importGithubProfileCommand, manageProfilesCommand);
     // Auto-activate on supported languages
     const activeEditor = vscode.window.activeTextEditor;
     if (activeEditor && isSupportedLanguage(activeEditor.document.languageId)) {

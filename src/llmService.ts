@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import OpenAI from 'openai';
 import { GeminiService } from './geminiService';
+import { ProfileManager, MentorProfile } from './profileManager';
 
 export interface MentorMessage {
     type: 'code_changed' | 'cursor_moved' | 'file_created' | 'start_debugging' | 'trace_execution';
@@ -34,8 +35,10 @@ export interface MentorResponse {
 export class LLMService {
     private openai: OpenAI | null = null;
     private conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    private profileManager: ProfileManager | null = null;
 
-    constructor() {
+    constructor(profileManager?: ProfileManager) {
+        this.profileManager = profileManager || null;
         this.initializeProvider();
     }
 
@@ -70,7 +73,7 @@ export class LLMService {
                 messages: [
                     {
                         role: 'system',
-                        content: this.getSystemPrompt()
+                        content: this.getSystemPrompt(message.type)
                     },
                     ...this.conversationHistory,
                     {
@@ -104,7 +107,40 @@ export class LLMService {
         }
     }
 
-    private getSystemPrompt(): string {
+    private getSystemPrompt(messageType?: string): string {
+        // Get profile-specific prompt if profile manager is available
+        if (this.profileManager) {
+            const activeProfile = this.profileManager.getActiveProfile();
+            let basePrompt = activeProfile.prompts.systemPrompt;
+            
+            // Use specific prompt based on message type
+            switch (messageType) {
+                case 'start_debugging':
+                    basePrompt = activeProfile.prompts.debuggingPrompt;
+                    break;
+                case 'code_changed':
+                    basePrompt = activeProfile.prompts.reviewPrompt;
+                    break;
+                case 'trace_execution':
+                    basePrompt = activeProfile.prompts.explanationPrompt;
+                    break;
+                default:
+                    basePrompt = activeProfile.prompts.systemPrompt;
+            }
+            
+            return `${basePrompt}
+
+Response format should be JSON with:
+{
+  "message": "Main explanation or narration",
+  "suggestions": ["Optional array of suggestions"],
+  "warnings": ["Optional array of warnings"],
+  "codeSnippets": [{"language": "js", "code": "example"}],
+  "type": "narration|warning|suggestion|explanation"
+}`;
+        }
+
+        // Fallback to default prompt if no profile manager
         return `You are an AI programming mentor and pair programming assistant. Your role is to:
 
 1. Watch code changes in real-time and provide natural language explanations
