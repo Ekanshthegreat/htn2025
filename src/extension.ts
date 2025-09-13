@@ -9,6 +9,7 @@ import { RealtimeAnalyzer } from './realtimeAnalyzer';
 import { ProfileManager } from './profileManager';
 import { GitHubService } from './githubService';
 import { GenesysService } from './genesysService';
+import { MentorHoverProvider } from './hoverProvider';
 
 let aiMentorProvider: AIMentorProvider;
 let codeWatcher: CodeWatcher;
@@ -20,6 +21,7 @@ let realtimeAnalyzer: RealtimeAnalyzer;
 let profileManager: ProfileManager;
 let githubService: GitHubService;
 let genesysService: GenesysService;
+let hoverProvider: MentorHoverProvider;
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('🚀 AI Debugger Mentor is now active!');
@@ -35,6 +37,7 @@ export function activate(context: vscode.ExtensionContext) {
     realtimeAnalyzer = new RealtimeAnalyzer(llmService, voiceService, profileManager);
     codeWatcher = new CodeWatcher(astAnalyzer, llmService);
     aiMentorProvider = new AIMentorProvider(context.extensionUri, codeWatcher, llmService, profileManager);
+    hoverProvider = new MentorHoverProvider(profileManager, astAnalyzer);
     
     // Connect codeWatcher to aiMentorProvider for UI updates
     codeWatcher.setAIMentorProvider(aiMentorProvider);
@@ -43,6 +46,14 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider('aiMentorPanel', aiMentorProvider)
     );
+
+    // Register hover provider for all supported languages
+    const supportedLanguages = ['javascript', 'typescript', 'python', 'java', 'cpp'];
+    supportedLanguages.forEach(language => {
+        context.subscriptions.push(
+            vscode.languages.registerHoverProvider(language, hoverProvider)
+        );
+    });
 
     // Register commands
     const activateCommand = vscode.commands.registerCommand('aiMentor.activate', () => {

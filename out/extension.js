@@ -35,6 +35,7 @@ const realtimeAnalyzer_1 = require("./realtimeAnalyzer");
 const profileManager_1 = require("./profileManager");
 const githubService_1 = require("./githubService");
 const genesysService_1 = require("./genesysService");
+const hoverProvider_1 = require("./hoverProvider");
 let aiMentorProvider;
 let codeWatcher;
 let astAnalyzer;
@@ -45,6 +46,7 @@ let realtimeAnalyzer;
 let profileManager;
 let githubService;
 let genesysService;
+let hoverProvider;
 function activate(context) {
     console.log('🚀 AI Debugger Mentor is now active!');
     // Initialize services
@@ -58,10 +60,16 @@ function activate(context) {
     realtimeAnalyzer = new realtimeAnalyzer_1.RealtimeAnalyzer(llmService, voiceService, profileManager);
     codeWatcher = new codeWatcher_1.CodeWatcher(astAnalyzer, llmService);
     aiMentorProvider = new aiMentorProvider_1.AIMentorProvider(context.extensionUri, codeWatcher, llmService, profileManager);
+    hoverProvider = new hoverProvider_1.MentorHoverProvider(profileManager, astAnalyzer);
     // Connect codeWatcher to aiMentorProvider for UI updates
     codeWatcher.setAIMentorProvider(aiMentorProvider);
     // Register the webview provider
     context.subscriptions.push(vscode.window.registerWebviewViewProvider('aiMentorPanel', aiMentorProvider));
+    // Register hover provider for all supported languages
+    const supportedLanguages = ['javascript', 'typescript', 'python', 'java', 'cpp'];
+    supportedLanguages.forEach(language => {
+        context.subscriptions.push(vscode.languages.registerHoverProvider(language, hoverProvider));
+    });
     // Register commands
     const activateCommand = vscode.commands.registerCommand('aiMentor.activate', () => {
         const activeProfile = profileManager.getActiveProfile();
