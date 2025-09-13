@@ -5,6 +5,7 @@ import { ASTAnalyzer } from './astAnalyzer';
 import { LLMService } from './llmService';
 import { VoiceService } from './voiceService';
 import { GraphiteService } from './graphiteService';
+import { RealtimeAnalyzer } from './realtimeAnalyzer';
 
 let aiMentorProvider: AIMentorProvider;
 let codeWatcher: CodeWatcher;
@@ -12,17 +13,22 @@ let astAnalyzer: ASTAnalyzer;
 let llmService: LLMService;
 let voiceService: VoiceService;
 let graphiteService: GraphiteService;
+let realtimeAnalyzer: RealtimeAnalyzer;
 
 export function activate(context: vscode.ExtensionContext) {
-    console.log('AI Debugger Mentor is now active!');
+    console.log('🚀 AI Debugger Mentor is now active!');
 
     // Initialize services
     llmService = new LLMService();
     astAnalyzer = new ASTAnalyzer();
     voiceService = new VoiceService();
     graphiteService = new GraphiteService();
+    realtimeAnalyzer = new RealtimeAnalyzer(llmService, voiceService);
     codeWatcher = new CodeWatcher(astAnalyzer, llmService);
     aiMentorProvider = new AIMentorProvider(context.extensionUri, codeWatcher, llmService);
+    
+    // Debug: Confirm all services initialized
+    console.log('🔧 All services initialized, including Nikola real-time analyzer');
 
     // Register the webview provider
     context.subscriptions.push(
@@ -86,9 +92,37 @@ export function activate(context: vscode.ExtensionContext) {
         await voiceService.toggleConversationalMode();
     });
 
-    // New Graphite Engineering Commands
+    // Register real-time analysis toggle
+    const toggleRealtimeAnalysisCommand = vscode.commands.registerCommand('aiMentor.toggleRealtimeAnalysis', () => {
+        const config = vscode.workspace.getConfiguration('aiMentor');
+        const enabled = config.get<boolean>('realtimeAnalysis', true);
+        config.update('realtimeAnalysis', !enabled, vscode.ConfigurationTarget.Global);
+        
+        if (!enabled) {
+            // Enable real-time analysis
+            realtimeAnalyzer.enable();
+            vscode.window.showInformationMessage('🤖 AI Mentor real-time analysis ENABLED - watching your code!');
+        } else {
+            // Disable real-time analysis
+            realtimeAnalyzer.disable();
+            vscode.window.showInformationMessage('⏸️ AI Mentor real-time analysis DISABLED');
+        }
+    });
+
+    // Register engineering practices commands
     const showEngineeringReportCommand = vscode.commands.registerCommand('aiMentor.showEngineeringReport', async () => {
-        await graphiteService.showEngineeringReport();
+        try {
+            const report = await graphiteService.generateEngineeringReport();
+            const panel = vscode.window.createWebviewPanel(
+                'engineeringReport',
+                '📊 Engineering Practices Report',
+                vscode.ViewColumn.One,
+                { enableScripts: true }
+            );
+            panel.webview.html = report;
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to generate engineering report: ${error}`);
+        }
     });
 
     const analyzeEngineeringPracticesCommand = vscode.commands.registerCommand('aiMentor.analyzeEngineeringPractices', async () => {
@@ -116,10 +150,11 @@ export function activate(context: vscode.ExtensionContext) {
         startMultiModalAgentCommand,
         toggleVoiceCommand,
         toggleConversationalModeCommand,
+        toggleRealtimeAnalysisCommand,
         showEngineeringReportCommand,
-        analyzeEngineeringPracticesCommand,
-        narrateEngineeringPracticesCommand
+        analyzeEngineeringPracticesCommand
     );
+    context.subscriptions.push(narrateEngineeringPracticesCommand);
 
     // Auto-activate on supported languages
     const activeEditor = vscode.window.activeTextEditor;

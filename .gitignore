@@ -1,0 +1,41 @@
+# Compiled output
+/out
+*.vsix
+
+# Node modules
+node_modules/
+
+# TypeScript
+*.tsbuildinfo
+
+# VS Code
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# API Keys and secrets
+.env
+.env.local
+.env.production
+config/secrets.json
+
+# Temporary files
+*.tmp
+*.temp
