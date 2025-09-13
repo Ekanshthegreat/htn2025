@@ -5,6 +5,7 @@ import { ASTAnalyzer } from './astAnalyzer';
 import { LLMService } from './llmService';
 import { VoiceService } from './voiceService';
 import { GraphiteService } from './graphiteService';
+import { RealtimeAnalyzer } from './realtimeAnalyzer';
 import { ProfileManager } from './profileManager';
 import { GitHubService } from './githubService';
 
@@ -14,6 +15,7 @@ let astAnalyzer: ASTAnalyzer;
 let llmService: LLMService;
 let voiceService: VoiceService;
 let graphiteService: GraphiteService;
+let realtimeAnalyzer: RealtimeAnalyzer;
 let profileManager: ProfileManager;
 let githubService: GitHubService;
 
