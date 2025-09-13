@@ -93,23 +93,33 @@ export class GitHubService {
 
     public async analyzeProfile(username: string): Promise<ProfileAnalysis> {
         try {
+            console.log(`Starting profile analysis for: ${username}`);
+            
             const [user, repos] = await Promise.all([
                 this.getUserProfile(username),
                 this.getUserRepos(username, 20)
             ]);
+            
+            console.log(`Fetched user data and ${repos?.length || 0} repositories`);
 
             // Analyze repositories for expertise and language preferences
-            const languageStats = this.analyzeLanguageUsage(repos);
-            const expertise = this.extractExpertise(repos, languageStats);
+            const languageStats = this.analyzeLanguageUsage(repos || []);
+            console.log(`Language stats:`, Array.from(languageStats.entries()));
+            
+            const expertise = this.extractExpertise(repos || [], languageStats);
+            console.log(`Extracted expertise:`, expertise);
             
             // Analyze a few recent repositories for commit patterns
-            const commitAnalysis = await this.analyzeCommitPatterns(username, repos.slice(0, 5));
+            const commitAnalysis = await this.analyzeCommitPatterns(username, (repos || []).slice(0, 5));
+            console.log(`Commit analysis:`, commitAnalysis);
             
             // Determine personality traits based on analysis
-            const personality = this.inferPersonality(user, repos, commitAnalysis);
+            const personality = this.inferPersonality(user, repos || [], commitAnalysis);
+            console.log(`Inferred personality:`, personality);
             
             // Infer code style preferences
             const codeStylePreferences = this.inferCodeStyle(languageStats, commitAnalysis);
+            console.log(`Code style preferences:`, codeStylePreferences);
 
             return {
                 personality,
@@ -120,17 +130,25 @@ export class GitHubService {
 
         } catch (error) {
             console.error('Error analyzing GitHub profile:', error);
+            console.error('Stack trace:', error.stack);
             throw error;
         }
     }
 
     private analyzeLanguageUsage(repos: GitHubRepo[]): Map<string, number> {
+        console.log(`Analyzing language usage for ${repos?.length || 0} repos`);
         const languageStats = new Map<string, number>();
         
-        repos.forEach(repo => {
-            if (repo.language) {
+        if (!repos || !Array.isArray(repos)) {
+            console.warn('No repos provided or repos is not an array');
+            return languageStats;
+        }
+        
+        repos.forEach((repo, index) => {
+            console.log(`Processing repo ${index}: ${repo?.name}, language: ${repo?.language}`);
+            if (repo && repo.language) {
                 const current = languageStats.get(repo.language) || 0;
-                languageStats.set(repo.language, current + repo.size);
+                languageStats.set(repo.language, current + (repo.size || 0));
             }
         });
 
@@ -138,7 +156,13 @@ export class GitHubService {
     }
 
     private extractExpertise(repos: GitHubRepo[], languageStats: Map<string, number>): string[] {
+        console.log(`Extracting expertise from ${repos?.length || 0} repos`);
         const expertise: string[] = [];
+        
+        if (!repos || !Array.isArray(repos)) {
+            console.warn('No repos provided for expertise extraction');
+            return expertise;
+        }
         
         // Add top programming languages
         const sortedLanguages = Array.from(languageStats.entries())
@@ -146,14 +170,22 @@ export class GitHubService {
             .slice(0, 5)
             .map(([lang]) => lang.toLowerCase());
         
+        console.log(`Top languages:`, sortedLanguages);
         expertise.push(...sortedLanguages);
 
         // Extract expertise from repository topics and descriptions
         const topics = new Set<string>();
         const frameworks = new Set<string>();
         
-        repos.forEach(repo => {
-            repo.topics?.forEach(topic => topics.add(topic));
+        repos.forEach((repo, index) => {
+            if (!repo) {
+                console.warn(`Repo at index ${index} is null/undefined`);
+                return;
+            }
+            
+            if (repo.topics && Array.isArray(repo.topics)) {
+                repo.topics.forEach(topic => topics.add(topic));
+            }
             
             // Look for common frameworks/technologies in descriptions
             const description = repo.description?.toLowerCase() || '';
@@ -169,10 +201,18 @@ export class GitHubService {
         });
 
         // Add most common topics and frameworks
-        expertise.push(...Array.from(topics).slice(0, 8));
-        expertise.push(...Array.from(frameworks).slice(0, 5));
+        const topicsArray = Array.from(topics).slice(0, 8);
+        const frameworksArray = Array.from(frameworks).slice(0, 5);
+        
+        console.log(`Topics found:`, topicsArray);
+        console.log(`Frameworks found:`, frameworksArray);
+        
+        expertise.push(...topicsArray);
+        expertise.push(...frameworksArray);
 
-        return [...new Set(expertise)]; // Remove duplicates
+        const finalExpertise = [...new Set(expertise)]; // Remove duplicates
+        console.log(`Final expertise array:`, finalExpertise);
+        return finalExpertise;
     }
 
     private async analyzeCommitPatterns(username: string, repos: GitHubRepo[]): Promise<any> {
@@ -182,15 +222,17 @@ export class GitHubService {
         for (const repo of repos.slice(0, 3)) { // Analyze top 3 repos to avoid rate limits
             try {
                 const commits = await this.getRepoCommits(username, repo.name, 20);
-                commitMessages.push(...commits.map(c => c.message));
-                totalCommits += commits.length;
+                if (commits && Array.isArray(commits)) {
+                    commitMessages.push(...commits.map(c => c?.message).filter(msg => msg != null));
+                    totalCommits += commits.length;
+                }
             } catch (error) {
                 console.warn(`Could not fetch commits for ${repo.name}:`, error);
             }
         }
 
         const avgCommitMessageLength = commitMessages.length > 0 
-            ? commitMessages.reduce((sum, msg) => sum + msg.length, 0) / commitMessages.length 
+            ? commitMessages.reduce((sum, msg) => sum + (msg?.length || 0), 0) / commitMessages.length 
             : 50;
 
         const usesConventionalCommits = commitMessages.some(msg => 
@@ -312,56 +354,60 @@ export class GitHubService {
 
     public async createProfileFromGitHub(
         username: string, 
-        role: MentorProfile['role'], 
         customName?: string
     ): Promise<Partial<MentorProfile>> {
-        const analysis = await this.analyzeProfile(username);
-        const user = await this.getUserProfile(username);
+        try {
+            console.log(`Creating profile from GitHub for: ${username}`);
+            
+            const analysis = await this.analyzeProfile(username);
+            console.log(`Analysis completed:`, analysis);
+            
+            const user = await this.getUserProfile(username);
+            console.log(`User data:`, user);
 
-        const rolePrompts = this.generateRoleSpecificPrompts(role, username, analysis);
+            const prompts = this.generatePrompts(username, analysis);
+            console.log(`Generated prompts:`, prompts);
 
-        return {
-            name: customName || `${user.name || username} (${role})`,
-            role,
-            githubUsername: username,
-            avatar: user.avatar_url,
-            personality: {
-                ...analysis.personality,
-                expertise: analysis.expertise
-            },
-            codeStylePreferences: analysis.codeStylePreferences,
-            prompts: rolePrompts
-        };
+            const profile = {
+                name: customName || user.name || username,
+                githubUsername: username,
+                avatar: user.avatar_url,
+                personality: {
+                    ...analysis.personality,
+                    expertise: analysis.expertise || []
+                },
+                codeStylePreferences: analysis.codeStylePreferences,
+                prompts: prompts
+            };
+            
+            console.log(`Final profile created:`, profile);
+            return profile;
+        } catch (error) {
+            console.error(`Error in createProfileFromGitHub for ${username}:`, error);
+            console.error('Stack trace:', error.stack);
+            throw error;
+        }
     }
 
-    private generateRoleSpecificPrompts(
-        role: MentorProfile['role'], 
+    private generatePrompts(
         username: string, 
         analysis: ProfileAnalysis
     ): MentorProfile['prompts'] {
+        const expertise = analysis.expertise || [];
+        const focusAreas = analysis.personality.focusAreas || ['code quality'];
+        
         const basePersonality = `You are a coding mentor based on ${username}'s GitHub profile. ` +
             `Your communication style is ${analysis.personality.communicationStyle} and you provide ` +
-            `${analysis.personality.feedbackApproach} feedback. Your expertise includes: ${analysis.expertise.join(', ')}.`;
-
-        const roleSpecificTraits = {
-            'boss': 'Focus on business impact, delivery timelines, and team productivity. Be direct and results-oriented.',
-            'staff-engineer': 'Emphasize architectural decisions, scalability, and long-term technical strategy. Think systems-level.',
-            'senior-dev': 'Mentor with patience, focus on clean code practices, and help others learn and grow.',
-            'tech-lead': 'Balance technical excellence with team coordination and project delivery.',
-            'mentor': 'Be supportive and educational, focusing on learning opportunities and skill development.',
-            'custom': 'Adapt your mentoring style based on the specific context and needs.'
-        };
-
-        const roleContext = roleSpecificTraits[role];
+            `${analysis.personality.feedbackApproach} feedback.` +
+            (expertise.length > 0 ? ` Your expertise includes: ${expertise.join(', ')}.` : '');
 
         return {
-            systemPrompt: `${basePersonality} ${roleContext}`,
-            reviewPrompt: `Review this code as a ${role} would, considering ${analysis.personality.focusAreas.join(', ')}. ` +
+            systemPrompt: basePersonality,
+            reviewPrompt: `Review this code considering ${focusAreas.join(', ')}. ` +
                 `Provide ${analysis.personality.responseLength} feedback in a ${analysis.personality.communicationStyle} manner.`,
-            debuggingPrompt: `Help debug this issue with the approach of a ${role}. ${roleContext} ` +
-                `Focus on ${analysis.personality.focusAreas.join(' and ')}.`,
-            explanationPrompt: `Explain this code as a ${role} would, using your ${analysis.personality.communicationStyle} ` +
-                `communication style and ${analysis.personality.responseLength} explanations.`
+            debuggingPrompt: `Help debug this issue focusing on ${focusAreas.join(' and ')}.`,
+            explanationPrompt: `Explain this code using your ${analysis.personality.communicationStyle} ` +
+                `communication style with ${analysis.personality.responseLength} explanations.`
         };
     }
 }

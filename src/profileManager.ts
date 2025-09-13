@@ -21,7 +21,6 @@ export interface MentorPersonality {
 export interface MentorProfile {
     id: string;
     name: string;
-    role: 'boss' | 'staff-engineer' | 'senior-dev' | 'tech-lead' | 'mentor' | 'custom';
     githubUsername?: string;
     avatar?: string;
     personality: MentorPersonality;
@@ -68,7 +67,6 @@ export class ProfileManager {
             this.addProfile({
                 id: 'default',
                 name: 'General Mentor',
-                role: 'mentor',
                 personality: {
                     communicationStyle: 'supportive',
                     feedbackApproach: 'encouraging',
@@ -95,98 +93,6 @@ export class ProfileManager {
                 isActive: true
             });
 
-            // The Boss Profile
-            this.addProfile({
-                id: 'boss',
-                name: 'The Boss',
-                role: 'boss',
-                personality: {
-                    communicationStyle: 'direct',
-                    feedbackApproach: 'pragmatic',
-                    expertise: ['business impact', 'delivery', 'efficiency'],
-                    focusAreas: ['time to market', 'maintainability', 'team productivity'],
-                    responseLength: 'brief'
-                },
-                codeStylePreferences: {
-                    indentStyle: 'spaces',
-                    indentSize: 2,
-                    maxLineLength: 100,
-                    preferredQuotes: 'double',
-                    semicolons: true,
-                    trailingCommas: false,
-                    bracketSpacing: false
-                },
-                prompts: {
-                    systemPrompt: "You are a results-focused engineering manager. Prioritize business impact, delivery speed, and maintainability. Be direct but constructive.",
-                    reviewPrompt: "Review this code from a business perspective. Focus on delivery, maintainability, and team efficiency.",
-                    debuggingPrompt: "Help solve this quickly. What's the fastest path to a working solution?",
-                    explanationPrompt: "Explain this briefly, focusing on business value and impact."
-                },
-                lastUpdated: new Date(),
-                isActive: false
-            });
-
-            // Staff Engineer Profile
-            this.addProfile({
-                id: 'staff-engineer',
-                name: 'Staff Engineer',
-                role: 'staff-engineer',
-                personality: {
-                    communicationStyle: 'detailed',
-                    feedbackApproach: 'analytical',
-                    expertise: ['architecture', 'scalability', 'system design', 'performance'],
-                    focusAreas: ['long-term design', 'scalability', 'technical debt', 'patterns'],
-                    responseLength: 'detailed'
-                },
-                codeStylePreferences: {
-                    indentStyle: 'spaces',
-                    indentSize: 4,
-                    maxLineLength: 120,
-                    preferredQuotes: 'single',
-                    semicolons: true,
-                    trailingCommas: true,
-                    bracketSpacing: true
-                },
-                prompts: {
-                    systemPrompt: "You are a staff engineer focused on architecture and long-term system design. Consider scalability, maintainability, and technical excellence.",
-                    reviewPrompt: "Review this code with focus on architecture, scalability, and long-term maintainability. Consider design patterns and system implications.",
-                    debuggingPrompt: "Analyze this issue from a systems perspective. Consider root causes and architectural implications.",
-                    explanationPrompt: "Explain this code with focus on architectural decisions and system design principles."
-                },
-                lastUpdated: new Date(),
-                isActive: false
-            });
-
-            // Senior Developer Profile
-            this.addProfile({
-                id: 'senior-dev',
-                name: 'Senior Developer',
-                role: 'senior-dev',
-                personality: {
-                    communicationStyle: 'supportive',
-                    feedbackApproach: 'encouraging',
-                    expertise: ['clean code', 'testing', 'mentoring', 'best practices'],
-                    focusAreas: ['code quality', 'testing', 'readability', 'learning'],
-                    responseLength: 'moderate'
-                },
-                codeStylePreferences: {
-                    indentStyle: 'spaces',
-                    indentSize: 2,
-                    maxLineLength: 80,
-                    preferredQuotes: 'single',
-                    semicolons: true,
-                    trailingCommas: true,
-                    bracketSpacing: true
-                },
-                prompts: {
-                    systemPrompt: "You are an experienced senior developer who loves mentoring. Focus on clean code, testing, and helping others learn and grow.",
-                    reviewPrompt: "Review this code as a mentor. Focus on clean code principles, testing opportunities, and learning moments.",
-                    debuggingPrompt: "Help debug this step by step. Explain the debugging process and teach problem-solving techniques.",
-                    explanationPrompt: "Explain this code in a teaching manner, highlighting best practices and learning opportunities."
-                },
-                lastUpdated: new Date(),
-                isActive: false
-            });
         }
     }
 
@@ -240,18 +146,14 @@ export class ProfileManager {
         return false;
     }
 
-    public getProfilesByRole(role: MentorProfile['role']): MentorProfile[] {
-        return Array.from(this.profiles.values()).filter(profile => profile.role === role);
-    }
 
-    public createProfileFromGitHub(githubUsername: string, role: MentorProfile['role'], name?: string): string {
+    public createProfileFromGitHub(githubUsername: string, name?: string): string {
         const profileId = `github-${githubUsername}-${Date.now()}`;
         
         // This will be enhanced when we add GitHub integration
         const newProfile: MentorProfile = {
             id: profileId,
-            name: name || `${githubUsername} (${role})`,
-            role: role,
+            name: name || githubUsername,
             githubUsername: githubUsername,
             personality: {
                 communicationStyle: 'supportive',
@@ -270,7 +172,7 @@ export class ProfileManager {
                 bracketSpacing: true
             },
             prompts: {
-                systemPrompt: `You are a coding mentor based on ${githubUsername}'s GitHub profile and ${role} role.`,
+                systemPrompt: `You are a coding mentor based on ${githubUsername}'s GitHub profile.`,
                 reviewPrompt: "Review this code based on the coding patterns and style preferences learned from the GitHub profile.",
                 debuggingPrompt: "Help debug this issue using the problem-solving approach characteristic of this mentor.",
                 explanationPrompt: "Explain this code in the communication style of this mentor."

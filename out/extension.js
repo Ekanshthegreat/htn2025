@@ -158,7 +158,7 @@ function activate(context) {
         const activeProfile = profileManager.getActiveProfile();
         const items = profiles.map(profile => ({
             label: profile.name,
-            description: `${profile.role} - ${profile.githubUsername || 'Built-in'}`,
+            description: profile.githubUsername || 'Built-in',
             detail: profile.id === activeProfile.id ? '$(check) Currently Active' : '',
             profile: profile
         }));
@@ -178,26 +178,12 @@ function activate(context) {
         });
         if (!name)
             return;
-        const roleItems = [
-            { label: 'Boss', value: 'boss' },
-            { label: 'Staff Engineer', value: 'staff-engineer' },
-            { label: 'Senior Developer', value: 'senior-dev' },
-            { label: 'Tech Lead', value: 'tech-lead' },
-            { label: 'Mentor', value: 'mentor' },
-            { label: 'Custom', value: 'custom' }
-        ];
-        const selectedRole = await vscode.window.showQuickPick(roleItems, {
-            placeHolder: 'Select the mentor role'
-        });
-        if (!selectedRole)
-            return;
         const profileId = `custom-${Date.now()}`;
         const defaultProfile = profileManager.getProfile('default');
         profileManager.addProfile({
             ...defaultProfile,
             id: profileId,
             name: name,
-            role: selectedRole.value,
             lastUpdated: new Date(),
             isActive: false
         });
@@ -210,21 +196,9 @@ function activate(context) {
         });
         if (!username)
             return;
-        const roleItems = [
-            { label: 'Boss', value: 'boss' },
-            { label: 'Staff Engineer', value: 'staff-engineer' },
-            { label: 'Senior Developer', value: 'senior-dev' },
-            { label: 'Tech Lead', value: 'tech-lead' },
-            { label: 'Mentor', value: 'mentor' }
-        ];
-        const selectedRole = await vscode.window.showQuickPick(roleItems, {
-            placeHolder: 'What role should this mentor have?'
-        });
-        if (!selectedRole)
-            return;
         try {
             vscode.window.showInformationMessage(`Analyzing GitHub profile: ${username}...`);
-            const profileData = await githubService.createProfileFromGitHub(username, selectedRole.value);
+            const profileData = await githubService.createProfileFromGitHub(username);
             const profileId = `github-${username}-${Date.now()}`;
             profileManager.addProfile({
                 id: profileId,
@@ -243,7 +217,7 @@ function activate(context) {
         const activeProfile = profileManager.getActiveProfile();
         const items = profiles.map(profile => ({
             label: profile.name,
-            description: `${profile.role} - ${profile.githubUsername || 'Built-in'}`,
+            description: profile.githubUsername || 'Built-in',
             detail: profile.id === activeProfile.id ? '$(check) Active' : '',
             buttons: profile.id !== 'default' ? [
                 {
