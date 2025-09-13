@@ -64,9 +64,22 @@ function activate(context) {
     context.subscriptions.push(vscode.window.registerWebviewViewProvider('aiMentorPanel', aiMentorProvider));
     // Register commands
     const activateCommand = vscode.commands.registerCommand('aiMentor.activate', () => {
+        // Check if we have a GitHub profile first
+        const profiles = profileManager.getAllProfiles();
+        const githubProfiles = profiles.filter(p => p.githubUsername);
+        if (githubProfiles.length === 0) {
+            vscode.window.showWarningMessage('Please import your GitHub profile first to personalize AI responses.', 'Import GitHub Profile').then(selection => {
+                if (selection === 'Import GitHub Profile') {
+                    vscode.commands.executeCommand('aiMentor.importGithubProfile');
+                }
+            });
+            return;
+        }
         codeWatcher.activate();
         vscode.commands.executeCommand('setContext', 'aiMentor.active', true);
-        vscode.window.showInformationMessage('AI Mentor activated! I\'m now watching your code.');
+        const activeProfile = profileManager.getActiveProfile();
+        const mentorName = activeProfile.githubUsername || activeProfile.name;
+        vscode.window.showInformationMessage(`${mentorName} is now watching your code and ready to help!`);
     });
     const deactivateCommand = vscode.commands.registerCommand('aiMentor.deactivate', () => {
         codeWatcher.deactivate();
@@ -149,13 +162,11 @@ function activate(context) {
             // Verify profile was saved
             const savedProfile = profileManager.getProfile(profileId);
             console.log('Debug: Saved profile:', savedProfile ? 'Found' : 'Not found');
-            vscode.window.showInformationMessage(`GitHub profile imported with empathy analysis! Profile ID: ${profileId}`, 'Set as Active', 'View Profiles').then(selection => {
-                if (selection === 'Set as Active') {
-                    profileManager.setActiveProfile(profileId);
-                    vscode.window.showInformationMessage(`Active profile set to: ${username}`);
-                }
-                else if (selection === 'View Profiles') {
-                    vscode.commands.executeCommand('aiMentor.manageProfiles');
+            // Automatically set as active profile
+            await profileManager.setActiveProfile(profileId);
+            vscode.window.showInformationMessage(`✅ GitHub profile imported and activated! You are now ${username}.`, 'Start Mentoring').then(selection => {
+                if (selection === 'Start Mentoring') {
+                    vscode.commands.executeCommand('aiMentor.activate');
                 }
             });
         }
@@ -197,10 +208,22 @@ function activate(context) {
         }
     });
     context.subscriptions.push(activateCommand, deactivateCommand, startDebuggingCommand, traceExecutionCommand, selectProfileCommand, createProfileCommand, importGithubProfileCommand, manageProfilesCommand);
-    // Auto-activate on supported languages
-    const activeEditor = vscode.window.activeTextEditor;
-    if (activeEditor && isSupportedLanguage(activeEditor.document.languageId)) {
-        vscode.commands.executeCommand('aiMentor.activate');
+    // Check if GitHub username is configured, if not prompt user
+    const config = vscode.workspace.getConfiguration('aiMentor');
+    const githubToken = config.get('githubToken');
+    if (!githubToken) {
+        vscode.window.showInformationMessage('AI Mentor requires a GitHub profile to personalize responses. Set up your GitHub profile first.', 'Import GitHub Profile').then(selection => {
+            if (selection === 'Import GitHub Profile') {
+                vscode.commands.executeCommand('aiMentor.importGithubProfile');
+            }
+        });
+    }
+    else {
+        // Auto-activate on supported languages only if GitHub is configured
+        const activeEditor = vscode.window.activeTextEditor;
+        if (activeEditor && isSupportedLanguage(activeEditor.document.languageId)) {
+            vscode.commands.executeCommand('aiMentor.activate');
+        }
     }
 }
 exports.activate = activate;

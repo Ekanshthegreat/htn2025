@@ -207,9 +207,10 @@
     }
 
     function updateMentorName(mentorName) {
+        console.log('Updating mentor name to:', mentorName);
         if (mentorName && mentorName !== 'AI Mentor') {
             // Update the header to show the active mentor
-            const headerElement = document.querySelector('.header h2');
+            const headerElement = document.querySelector('#mentorTitle');
             if (headerElement) {
                 headerElement.textContent = `🤖 ${mentorName}`;
             }
@@ -219,6 +220,9 @@
             if (welcomeMessage) {
                 welcomeMessage.textContent = `👋 Welcome! I'm ${mentorName}`;
             }
+            
+            // Update status to show active mentor
+            updateStatus(`${mentorName} is ready to help`);
         }
     }
 

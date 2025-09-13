@@ -81,10 +81,12 @@ class AIMentorProvider {
                     const activeProfile = this.profileManager.getActiveProfile();
                     console.log('Sending profiles to webview:', profiles.length, 'profiles');
                     console.log('Active profile:', activeProfile?.name);
+                    console.log('Profiles data:', profiles.map(p => ({ id: p.id, name: p.name, githubUsername: p.githubUsername })));
                     this._view.webview.postMessage({
                         type: 'updateProfiles',
                         profiles: profiles,
-                        activeProfileId: activeProfile?.id
+                        activeProfileId: activeProfile?.id,
+                        activeMentorName: activeProfile?.githubUsername || activeProfile?.name || 'AI Mentor'
                     });
                 }
                 catch (error) {
@@ -135,10 +137,10 @@ class AIMentorProvider {
             <body>
                 <div class="container">
                     <div class="header">
-                        <h2>🤖 AI Mentor</h2>
+                        <h2 id="mentorTitle">🤖 AI Mentor</h2>
                         <div class="header-controls">
                             <select id="profileSelect" class="profile-selector">
-                                <!-- Profiles will be populated by JavaScript -->
+                                <option value="">Select Profile...</option>
                             </select>
                             <button id="clearBtn" class="btn btn-secondary">Clear History</button>
                         </div>
