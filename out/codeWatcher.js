@@ -34,6 +34,9 @@ class CodeWatcher {
         this.previousContent = new Map();
         this.debounceDelay = 1000; // 1 second
     }
+    setAIMentorProvider(provider) {
+        this.aiMentorProvider = provider;
+    }
     activate() {
         if (this.isActive)
             return;
@@ -137,7 +140,7 @@ class CodeWatcher {
         // Analyze the changes
         const analysis = await this.astAnalyzer.analyzeChanges(previousAST, currentAST);
         // Send to LLM for natural language explanation
-        await this.llmService.sendMessage({
+        const response = await this.llmService.sendMessage({
             type: 'code_changed',
             fileName: document.fileName,
             language: document.languageId,
@@ -146,6 +149,10 @@ class CodeWatcher {
             previousContent: previousContent,
             currentContent: currentContent
         });
+        // Display response in UI if available
+        if (response && this.aiMentorProvider) {
+            this.aiMentorProvider.addMessage(response);
+        }
     }
     getContextAroundPosition(document, position) {
         const startLine = Math.max(0, position.line - 5);
@@ -160,23 +167,29 @@ class CodeWatcher {
     async startGuidedDebugging(code, language) {
         const ast = await this.astAnalyzer.parseCode(code, language);
         const analysis = await this.astAnalyzer.analyzeForDebugging(ast);
-        await this.llmService.sendMessage({
+        const response = await this.llmService.sendMessage({
             type: 'start_debugging',
             language: language,
             code: code,
             ast: ast,
             analysis: analysis
         });
+        if (response && this.aiMentorProvider) {
+            this.aiMentorProvider.addMessage(response);
+        }
     }
     async startExecutionTrace(code, language) {
         const ast = await this.astAnalyzer.parseCode(code, language);
         const executionFlow = await this.astAnalyzer.traceExecutionFlow(ast);
-        await this.llmService.sendMessage({
+        const response = await this.llmService.sendMessage({
             type: 'trace_execution',
             language: language,
             code: code,
             executionFlow: executionFlow
         });
+        if (response && this.aiMentorProvider) {
+            this.aiMentorProvider.addMessage(response);
+        }
     }
     isSupportedLanguage(languageId) {
         const supportedLanguages = ['javascript', 'typescript', 'python', 'java', 'cpp'];

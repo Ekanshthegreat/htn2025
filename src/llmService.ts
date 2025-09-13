@@ -134,11 +134,16 @@ export class LLMService {
                     
                     console.log('Using profile prompt:', basePrompt.substring(0, 100) + '...');
                     
+                    // Inject the GitHub username into the response format
+                    const mentorName = activeProfile.githubUsername || activeProfile.name || 'AI Mentor';
+                    
                     return `${basePrompt}
+
+Always identify yourself as "${mentorName}" in your responses. Start your messages with your name.
 
 Response format should be JSON with:
 {
-  "message": "Main explanation or narration",
+  "message": "${mentorName}: [Your explanation or narration here]",
   "suggestions": ["Optional array of suggestions"],
   "warnings": ["Optional array of warnings"],
   "codeSnippets": [{"language": "js", "code": "example"}],

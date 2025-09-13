@@ -56,6 +56,7 @@
                 break;
             case 'updateProfiles':
                 updateProfileSelector(message.profiles, message.activeProfileId);
+                updateMentorName(message.activeMentorName);
                 break;
         }
     });
@@ -203,6 +204,22 @@
             }
             profileSelect.appendChild(option);
         });
+    }
+
+    function updateMentorName(mentorName) {
+        if (mentorName && mentorName !== 'AI Mentor') {
+            // Update the header to show the active mentor
+            const headerElement = document.querySelector('.header h2');
+            if (headerElement) {
+                headerElement.textContent = `🤖 ${mentorName}`;
+            }
+            
+            // Update welcome message if it exists
+            const welcomeMessage = document.querySelector('.welcome-message h3');
+            if (welcomeMessage) {
+                welcomeMessage.textContent = `👋 Welcome! I'm ${mentorName}`;
+            }
+        }
     }
 
     function escapeHtml(text) {

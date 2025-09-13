@@ -67,7 +67,7 @@
         {
           "id": "aiMentorPanel",
           "name": "AI Mentor",
-          "icon": "$(robot)"
+          "type": "webview"
         }
       ]
     },

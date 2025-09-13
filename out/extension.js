@@ -58,6 +58,8 @@ function activate(context) {
     realtimeAnalyzer = new realtimeAnalyzer_1.RealtimeAnalyzer(llmService, voiceService);
     codeWatcher = new codeWatcher_1.CodeWatcher(astAnalyzer, llmService);
     aiMentorProvider = new aiMentorProvider_1.AIMentorProvider(context.extensionUri, codeWatcher, llmService, profileManager);
+    // Connect codeWatcher to aiMentorProvider for UI updates
+    codeWatcher.setAIMentorProvider(aiMentorProvider);
     // Register the webview provider
     context.subscriptions.push(vscode.window.registerWebviewViewProvider('aiMentorPanel', aiMentorProvider));
     // Register commands
@@ -91,58 +93,6 @@ function activate(context) {
         }
         const document = activeEditor.document;
         await codeWatcher.startExecutionTrace(document.getText(), document.languageId);
-    });
-    // New VAPI Voice AI Commands
-    const startVoiceConversationCommand = vscode.commands.registerCommand('aiMentor.startVoiceConversation', async () => {
-        await voiceService.startConversationalDebugging();
-    });
-    const startMultiModalAgentCommand = vscode.commands.registerCommand('aiMentor.startMultiModalAgent', async () => {
-        await voiceService.startMultiModalAgent();
-    });
-    const toggleVoiceCommand = vscode.commands.registerCommand('aiMentor.toggleVoice', async () => {
-        await voiceService.toggleVoice();
-    });
-    const toggleConversationalModeCommand = vscode.commands.registerCommand('aiMentor.toggleConversationalMode', async () => {
-        await voiceService.toggleConversationalMode();
-    });
-    // Register real-time analysis toggle
-    const toggleRealtimeAnalysisCommand = vscode.commands.registerCommand('aiMentor.toggleRealtimeAnalysis', () => {
-        const config = vscode.workspace.getConfiguration('aiMentor');
-        const enabled = config.get('realtimeAnalysis', true);
-        config.update('realtimeAnalysis', !enabled, vscode.ConfigurationTarget.Global);
-        if (!enabled) {
-            // Enable real-time analysis
-            realtimeAnalyzer.enable();
-            vscode.window.showInformationMessage('🤖 AI Mentor real-time analysis ENABLED - watching your code!');
-        }
-        else {
-            // Disable real-time analysis
-            realtimeAnalyzer.disable();
-            vscode.window.showInformationMessage('⏸️ AI Mentor real-time analysis DISABLED');
-        }
-    });
-    // Register engineering practices commands
-    const showEngineeringReportCommand = vscode.commands.registerCommand('aiMentor.showEngineeringReport', async () => {
-        try {
-            const report = await graphiteService.generateEngineeringReport();
-            const panel = vscode.window.createWebviewPanel('engineeringReport', '📊 Engineering Practices Report', vscode.ViewColumn.One, { enableScripts: true });
-            panel.webview.html = report;
-        }
-        catch (error) {
-            vscode.window.showErrorMessage(`Failed to generate engineering report: ${error}`);
-        }
-    });
-    const analyzeEngineeringPracticesCommand = vscode.commands.registerCommand('aiMentor.analyzeEngineeringPractices', async () => {
-        const practices = await graphiteService.analyzeEngineeringPractices();
-        const implementedCount = practices.filter(p => p.implemented).length;
-        vscode.window.showInformationMessage(`Engineering Analysis: ${implementedCount}/${practices.length} practices implemented. Use "Show Engineering Report" for details.`);
-    });
-    const narrateEngineeringPracticesCommand = vscode.commands.registerCommand('aiMentor.narrateEngineeringPractices', async () => {
-        const narrations = await graphiteService.narrateEngineeringPractices();
-        for (const narration of narrations) {
-            await voiceService.narrateCodeFlow(narration, 'explanation');
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Pause between narrations
-        }
     });
     // Profile Management Commands
     const selectProfileCommand = vscode.commands.registerCommand('aiMentor.selectProfile', async () => {
@@ -246,8 +196,7 @@ function activate(context) {
             }
         }
     });
-    context.subscriptions.push(activateCommand, deactivateCommand, startDebuggingCommand, traceExecutionCommand, startVoiceConversationCommand, startMultiModalAgentCommand, toggleVoiceCommand, toggleConversationalModeCommand, toggleRealtimeAnalysisCommand, showEngineeringReportCommand, analyzeEngineeringPracticesCommand, narrateEngineeringPracticesCommand, selectProfileCommand, createProfileCommand, importGithubProfileCommand, manageProfilesCommand);
-    context.subscriptions.push(narrateEngineeringPracticesCommand);
+    context.subscriptions.push(activateCommand, deactivateCommand, startDebuggingCommand, traceExecutionCommand, selectProfileCommand, createProfileCommand, importGithubProfileCommand, manageProfilesCommand);
     // Auto-activate on supported languages
     const activeEditor = vscode.window.activeTextEditor;
     if (activeEditor && isSupportedLanguage(activeEditor.document.languageId)) {

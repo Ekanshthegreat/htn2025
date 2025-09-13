@@ -1,4 +1,4 @@
-// Test file for Nikola's real-time analysis
+// Test file for real-time analysis
 var password = "secret123";
 if (user == null) {
     console.log("debugging");

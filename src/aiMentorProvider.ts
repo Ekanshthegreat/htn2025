@@ -81,7 +81,8 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                     this._view.webview.postMessage({
                         type: 'updateProfiles',
                         profiles: profiles,
-                        activeProfileId: activeProfile?.id
+                        activeProfileId: activeProfile?.id,
+                        activeMentorName: activeProfile?.githubUsername || activeProfile?.name || 'AI Mentor'
                     });
                 } catch (error) {
                     console.error('Error updating webview with profiles:', error);

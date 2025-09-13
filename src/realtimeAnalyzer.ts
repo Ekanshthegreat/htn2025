@@ -49,7 +49,7 @@ export class RealtimeAnalyzer {
         vscode.window.showInformationMessage(this.personality.getGreeting());
         
         // Debug: Log that analyzer is initialized
-        console.log('🔧 Nikola: Real-time analyzer initialized and ready!');
+        console.log('🔧 AI Mentor: Real-time analyzer initialized and ready!');
         
         // Immediately analyze current document if one is open
         const activeEditor = vscode.window.activeTextEditor;
@@ -408,7 +408,7 @@ export class RealtimeAnalyzer {
         });
         
         // Debug logging
-        console.log('🔧 Nikola: Document changed, analyzing...', document.fileName);
+        console.log('🔧 AI Mentor: Document changed, analyzing...', document.fileName);
         
         // Get the changed text
         const changes = event.contentChanges;
