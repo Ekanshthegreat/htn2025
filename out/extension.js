@@ -55,7 +55,7 @@ function activate(context) {
     astAnalyzer = new astAnalyzer_1.ASTAnalyzer();
     voiceService = new voiceService_1.VoiceService();
     graphiteService = new graphiteService_1.GraphiteService();
-    realtimeAnalyzer = new realtimeAnalyzer_1.RealtimeAnalyzer(llmService, voiceService);
+    realtimeAnalyzer = new realtimeAnalyzer_1.RealtimeAnalyzer(llmService, voiceService, profileManager);
     codeWatcher = new codeWatcher_1.CodeWatcher(astAnalyzer, llmService);
     aiMentorProvider = new aiMentorProvider_1.AIMentorProvider(context.extensionUri, codeWatcher, llmService, profileManager);
     // Connect codeWatcher to aiMentorProvider for UI updates
@@ -64,22 +64,9 @@ function activate(context) {
     context.subscriptions.push(vscode.window.registerWebviewViewProvider('aiMentorPanel', aiMentorProvider));
     // Register commands
     const activateCommand = vscode.commands.registerCommand('aiMentor.activate', () => {
-        // Check if we have a GitHub profile first
-        const profiles = profileManager.getAllProfiles();
-        const githubProfiles = profiles.filter(p => p.githubUsername);
-        if (githubProfiles.length === 0) {
-            vscode.window.showWarningMessage('Please import your GitHub profile first to personalize AI responses.', 'Import GitHub Profile').then(selection => {
-                if (selection === 'Import GitHub Profile') {
-                    vscode.commands.executeCommand('aiMentor.importGithubProfile');
-                }
-            });
-            return;
-        }
-        codeWatcher.activate();
-        vscode.commands.executeCommand('setContext', 'aiMentor.active', true);
         const activeProfile = profileManager.getActiveProfile();
-        const mentorName = activeProfile.githubUsername || activeProfile.name;
-        vscode.window.showInformationMessage(`${mentorName} is now watching your code and ready to help!`);
+        codeWatcher.activate();
+        vscode.window.showInformationMessage(`${activeProfile.name} is now mentoring you! I'm watching your code.`);
     });
     const deactivateCommand = vscode.commands.registerCommand('aiMentor.deactivate', () => {
         codeWatcher.deactivate();
@@ -144,35 +131,27 @@ function activate(context) {
         });
         vscode.window.showInformationMessage(`Created new mentor profile: ${name}`);
     });
-    const importGithubProfileCommand = vscode.commands.registerCommand('aiMentor.importGithubProfile', async () => {
-        const username = await vscode.window.showInputBox({
-            prompt: 'Enter GitHub username to import',
-            placeHolder: 'e.g., octocat'
+    const selectMentorCommand = vscode.commands.registerCommand('aiMentor.selectMentor', async () => {
+        const mentors = profileManager.getAvailableMentors();
+        const activeProfile = profileManager.getActiveProfile();
+        const items = mentors.map(mentor => ({
+            label: `${mentor.avatar} ${mentor.name}`,
+            description: mentor.personality,
+            detail: mentor.id === activeProfile.id ? '✅ Currently Active' : '',
+            mentorId: mentor.id
+        }));
+        const selection = await vscode.window.showQuickPick(items, {
+            placeHolder: 'Choose your coding mentor',
+            title: 'Select AI Mentor Personality'
         });
-        if (!username)
-            return;
-        try {
-            vscode.window.showInformationMessage(`Analyzing GitHub profile: ${username}...`);
-            // Get GitHub data from GitHubService
-            const githubData = await githubService.analyzeProfile(username);
-            console.log('Debug: GitHub data received:', githubData);
-            // Use ProfileManager's new method that integrates with Genesys
-            const profileId = await profileManager.createProfileFromGitHub(username, githubData);
-            console.log('Debug: Profile created with ID:', profileId);
-            // Verify profile was saved
-            const savedProfile = profileManager.getProfile(profileId);
-            console.log('Debug: Saved profile:', savedProfile ? 'Found' : 'Not found');
-            // Automatically set as active profile
-            await profileManager.setActiveProfile(profileId);
-            vscode.window.showInformationMessage(`✅ GitHub profile imported and activated! You are now ${username}.`, 'Start Mentoring').then(selection => {
-                if (selection === 'Start Mentoring') {
+        if (selection) {
+            await profileManager.setActiveProfile(selection.mentorId);
+            const selectedMentor = mentors.find(m => m.id === selection.mentorId);
+            vscode.window.showInformationMessage(`🎯 Mentor switched to ${selectedMentor?.name}! ${selectedMentor?.personality}`, 'Start Mentoring').then(choice => {
+                if (choice === 'Start Mentoring') {
                     vscode.commands.executeCommand('aiMentor.activate');
                 }
             });
-        }
-        catch (error) {
-            console.error('Debug: GitHub import error:', error);
-            vscode.window.showErrorMessage(`Failed to import GitHub profile: ${error}`);
         }
     });
     const manageProfilesCommand = vscode.commands.registerCommand('aiMentor.manageProfiles', async () => {
@@ -207,23 +186,17 @@ function activate(context) {
             }
         }
     });
-    context.subscriptions.push(activateCommand, deactivateCommand, startDebuggingCommand, traceExecutionCommand, selectProfileCommand, createProfileCommand, importGithubProfileCommand, manageProfilesCommand);
-    // Check if GitHub username is configured, if not prompt user
-    const config = vscode.workspace.getConfiguration('aiMentor');
-    const githubToken = config.get('githubToken');
-    if (!githubToken) {
-        vscode.window.showInformationMessage('AI Mentor requires a GitHub profile to personalize responses. Set up your GitHub profile first.', 'Import GitHub Profile').then(selection => {
-            if (selection === 'Import GitHub Profile') {
-                vscode.commands.executeCommand('aiMentor.importGithubProfile');
-            }
-        });
-    }
-    else {
-        // Auto-activate on supported languages only if GitHub is configured
-        const activeEditor = vscode.window.activeTextEditor;
-        if (activeEditor && isSupportedLanguage(activeEditor.document.languageId)) {
-            vscode.commands.executeCommand('aiMentor.activate');
+    context.subscriptions.push(activateCommand, deactivateCommand, startDebuggingCommand, traceExecutionCommand, selectProfileCommand, createProfileCommand, selectMentorCommand, manageProfilesCommand);
+    // Show welcome message with mentor selection
+    vscode.window.showInformationMessage('Welcome to AI Debugger Mentor! Choose your mentor personality to get started.', 'Select Mentor').then(selection => {
+        if (selection === 'Select Mentor') {
+            vscode.commands.executeCommand('aiMentor.selectMentor');
         }
+    });
+    // Auto-activate on supported languages
+    const activeEditor = vscode.window.activeTextEditor;
+    if (activeEditor && isSupportedLanguage(activeEditor.document.languageId)) {
+        vscode.commands.executeCommand('aiMentor.activate');
     }
 }
 exports.activate = activate;

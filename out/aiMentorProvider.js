@@ -86,7 +86,7 @@ class AIMentorProvider {
                         type: 'updateProfiles',
                         profiles: profiles,
                         activeProfileId: activeProfile?.id,
-                        activeMentorName: activeProfile?.githubUsername || activeProfile?.name || 'AI Mentor'
+                        activeMentorName: activeProfile?.name || 'AI Mentor'
                     });
                 }
                 catch (error) {
@@ -139,10 +139,12 @@ class AIMentorProvider {
                     <div class="header">
                         <h2 id="mentorTitle">🤖 AI Mentor</h2>
                         <div class="header-controls">
-                            <select id="profileSelect" class="profile-selector">
-                                <option value="">Select Profile...</option>
+                            <select id="mentorSelect" class="mentor-dropdown">
+                                <option value="marcus">💀 Marcus "The Hammer" - Brutally Honest</option>
+                                <option value="sophia">😏 Sophia "Sass" - Sarcastic Genius</option>
+                                <option value="alex">🌟 Alex "Sunshine" - Overwhelmingly Positive</option>
                             </select>
-                            <button id="clearBtn" class="btn btn-secondary">Clear History</button>
+                            <button id="clearBtn" class="btn btn-secondary">Clear</button>
                         </div>
                     </div>
                     
@@ -154,14 +156,13 @@ class AIMentorProvider {
                     <div id="messages" class="messages-container">
                         <div class="welcome-message">
                             <h3>👋 Welcome to AI Mentor!</h3>
-                            <p>I'm here to help you code better. I'll watch your code changes and provide real-time guidance.</p>
+                            <p>Your AI mentor will provide real-time guidance as you code. Switch mentors using the dropdown above:</p>
                             <ul>
-                                <li>🔍 <strong>Real-time Analysis:</strong> I analyze your code as you type</li>
-                                <li>🐛 <strong>Proactive Debugging:</strong> I spot issues before they become problems</li>
-                                <li>📚 <strong>Code Explanation:</strong> I explain what your code does in plain English</li>
-                                <li>🎯 <strong>Best Practices:</strong> I suggest improvements and optimizations</li>
+                                <li>💀 <strong>Marcus:</strong> Harsh but accurate - will tear your code apart to make you better</li>
+                                <li>😏 <strong>Sophia:</strong> Witty and sarcastic - uses humor to teach better coding</li>
+                                <li>🌟 <strong>Alex:</strong> Super positive - finds the good in everything you write</li>
                             </ul>
-                            <p>Start coding and I'll begin mentoring you!</p>
+                            <p>Start coding and your selected mentor will begin helping!</p>
                         </div>
                     </div>
 

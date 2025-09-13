@@ -113,6 +113,7 @@ export class LLMService {
             try {
                 const activeProfile = this.profileManager.getActiveProfile();
                 console.log('Active profile:', activeProfile?.name, activeProfile?.id);
+                console.log('Profile prompts available:', !!activeProfile?.prompts);
                 
                 if (activeProfile && activeProfile.prompts) {
                     let basePrompt = activeProfile.prompts.systemPrompt;
@@ -132,27 +133,31 @@ export class LLMService {
                             basePrompt = activeProfile.prompts.systemPrompt;
                     }
                     
-                    console.log('Using profile prompt:', basePrompt.substring(0, 100) + '...');
+                    console.log('Using profile prompt for', activeProfile.name, ':', basePrompt.substring(0, 100) + '...');
                     
-                    // Inject the GitHub username into the response format
-                    const mentorName = activeProfile.githubUsername || activeProfile.name || 'AI Mentor';
+                    // Use the mentor's name for responses
+                    const mentorName = activeProfile.name || 'AI Mentor';
                     
                     return `${basePrompt}
 
-Always identify yourself as "${mentorName}" in your responses. Start your messages with your name.
+CRITICAL: You MUST respond in character as ${mentorName}. Never break character.
 
 Response format should be JSON with:
 {
-  "message": "${mentorName}: [Your explanation or narration here]",
+  "message": "${mentorName}: [Your response in character]",
   "suggestions": ["Optional array of suggestions"],
   "warnings": ["Optional array of warnings"],
   "codeSnippets": [{"language": "js", "code": "example"}],
   "type": "narration|warning|suggestion|explanation"
 }`;
+                } else {
+                    console.log('No prompts found for active profile:', activeProfile?.name);
                 }
             } catch (error) {
                 console.error('Error getting active profile:', error);
             }
+        } else {
+            console.log('No profile manager available');
         }
 
         // Fallback to default prompt if no profile manager

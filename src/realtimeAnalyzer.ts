@@ -28,7 +28,8 @@ export class RealtimeAnalyzer {
 
     constructor(
         private llmService: LLMService,
-        private voiceService: VoiceService
+        private voiceService: VoiceService,
+        private profileManager?: any
     ) {
         this.personality = new MentorPersonalityService();
         this.genesysService = new GenesysService();
@@ -96,6 +97,22 @@ export class RealtimeAnalyzer {
 
     private async analyzeDocument(document: vscode.TextDocument) {
         const content = document.getText();
+        if (!content.trim()) return;
+        
+        const diagnostics: vscode.Diagnostic[] = [];
+        const lines = content.split('\n');
+        
+        // Run comprehensive analysis
+        this.analyzeCodeStyle(lines, diagnostics, document);
+        this.detectPotentialBugs(lines, diagnostics, document);
+        this.checkPerformanceIssues(lines, diagnostics, document);
+        this.detectSecurityVulnerabilities(lines, diagnostics, document);
+        this.checkBestPractices(lines, diagnostics, document);
+        
+        // Apply mentor personality to all diagnostics
+        this.applyMentorPersonality(diagnostics);
+        
+        this.diagnosticCollection.set(document.uri, diagnostics);
         
         // Skip if content hasn't changed significantly
         if (this.isSimilarContent(content, this.lastAnalyzedContent)) {
@@ -438,7 +455,9 @@ export class RealtimeAnalyzer {
                     empathyAdjustedMessage,
                     this.getSeverityBasedOnEmpathy(behaviorAnalysis)
                 );
-                diagnostic.source = `${this.personality.getName()} (Empathy: ${behaviorAnalysis?.empathyScore || 50})`;
+                // Use mentor profile name if available
+                const mentorName = this.profileManager?.getActiveProfile()?.name || this.personality.getName();
+                diagnostic.source = `${mentorName}`;
                 diagnostics.push(diagnostic);
             });
             
@@ -575,6 +594,15 @@ export class RealtimeAnalyzer {
     }
 
     private adjustMessageForEmpathy(originalMessage: string, behaviorAnalysis: UserBehaviorAnalysis | null): string {
+        // If we have a mentor profile, use its personality instead of empathy adjustments
+        if (this.profileManager) {
+            const activeProfile = this.profileManager.getActiveProfile();
+            if (activeProfile && activeProfile.prompts) {
+                // Transform the message using the mentor's style
+                return this.getMentorStyledMessage(originalMessage, activeProfile);
+            }
+        }
+        
         if (!behaviorAnalysis) return originalMessage;
 
         const empathyScore = behaviorAnalysis.empathyScore;
@@ -602,6 +630,255 @@ export class RealtimeAnalyzer {
         }
 
         return originalMessage;
+    }
+
+    private analyzeCodeStyle(lines: string[], diagnostics: vscode.Diagnostic[], document: vscode.TextDocument) {
+        lines.forEach((line, index) => {
+            const trimmedLine = line.trim();
+            
+            // Check for inconsistent indentation
+            if (line.length > 0 && !line.startsWith(' ') && !line.startsWith('\t') && line.startsWith(' ')) {
+                const range = new vscode.Range(index, 0, index, line.length);
+                diagnostics.push(new vscode.Diagnostic(
+                    range,
+                    'Inconsistent indentation detected',
+                    vscode.DiagnosticSeverity.Warning
+                ));
+            }
+            
+            // Check for long lines
+            if (line.length > 120) {
+                const range = new vscode.Range(index, 120, index, line.length);
+                diagnostics.push(new vscode.Diagnostic(
+                    range,
+                    'Line too long (>120 characters)',
+                    vscode.DiagnosticSeverity.Information
+                ));
+            }
+            
+            // Check for trailing whitespace
+            if (line.endsWith(' ') || line.endsWith('\t')) {
+                const range = new vscode.Range(index, line.trimEnd().length, index, line.length);
+                diagnostics.push(new vscode.Diagnostic(
+                    range,
+                    'Trailing whitespace',
+                    vscode.DiagnosticSeverity.Hint
+                ));
+            }
+            
+            // Check for missing semicolons in JavaScript/TypeScript
+            if ((document.languageId === 'javascript' || document.languageId === 'typescript') &&
+                trimmedLine.length > 0 && 
+                !trimmedLine.endsWith(';') && 
+                !trimmedLine.endsWith('{') && 
+                !trimmedLine.endsWith('}') &&
+                !trimmedLine.startsWith('//') &&
+                !trimmedLine.includes('if ') &&
+                !trimmedLine.includes('for ') &&
+                !trimmedLine.includes('while ') &&
+                !trimmedLine.includes('function ') &&
+                !trimmedLine.includes('class ') &&
+                !trimmedLine.includes('import ') &&
+                !trimmedLine.includes('export ')) {
+                const range = new vscode.Range(index, line.length, index, line.length);
+                diagnostics.push(new vscode.Diagnostic(
+                    range,
+                    'Missing semicolon',
+                    vscode.DiagnosticSeverity.Warning
+                ));
+            }
+        });
+    }
+
+    private detectPotentialBugs(lines: string[], diagnostics: vscode.Diagnostic[], document: vscode.TextDocument) {
+        lines.forEach((line, index) => {
+            const trimmedLine = line.trim();
+            
+            // Check for potential null/undefined access
+            if (trimmedLine.includes('.') && !trimmedLine.includes('?.') && 
+                (trimmedLine.includes('null') || trimmedLine.includes('undefined'))) {
+                const range = new vscode.Range(index, 0, index, line.length);
+                diagnostics.push(new vscode.Diagnostic(
+                    range,
+                    'Potential null/undefined access - consider using optional chaining (?.)',
+                    vscode.DiagnosticSeverity.Warning
+                ));
+            }
+            
+            // Check for == instead of ===
+            if (trimmedLine.includes('==') && !trimmedLine.includes('===') && !trimmedLine.includes('!==')) {
+                const range = new vscode.Range(index, 0, index, line.length);
+                diagnostics.push(new vscode.Diagnostic(
+                    range,
+                    'Use strict equality (===) instead of loose equality (==)',
+                    vscode.DiagnosticSeverity.Warning
+                ));
+            }
+            
+            // Check for var usage in modern JavaScript
+            if (trimmedLine.startsWith('var ')) {
+                const range = new vscode.Range(index, 0, index, line.length);
+                diagnostics.push(new vscode.Diagnostic(
+                    range,
+                    'Avoid \'var\' - use \'let\' or \'const\' instead',
+                    vscode.DiagnosticSeverity.Information
+                ));
+            }
+            
+            // Check for console.log in production code
+            if (trimmedLine.includes('console.log')) {
+                const range = new vscode.Range(index, 0, index, line.length);
+                diagnostics.push(new vscode.Diagnostic(
+                    range,
+                    'Remove console.log before production',
+                    vscode.DiagnosticSeverity.Information
+                ));
+            }
+        });
+    }
+
+    private checkPerformanceIssues(lines: string[], diagnostics: vscode.Diagnostic[], document: vscode.TextDocument) {
+        lines.forEach((line, index) => {
+            const trimmedLine = line.trim();
+            
+            // Check for inefficient array operations in loops
+            if (trimmedLine.includes('for') && trimmedLine.includes('.length')) {
+                const range = new vscode.Range(index, 0, index, line.length);
+                diagnostics.push(new vscode.Diagnostic(
+                    range,
+                    'Consider caching array length in variable for better performance',
+                    vscode.DiagnosticSeverity.Hint
+                ));
+            }
+            
+            // Check for synchronous file operations
+            if (trimmedLine.includes('readFileSync') || trimmedLine.includes('writeFileSync')) {
+                const range = new vscode.Range(index, 0, index, line.length);
+                diagnostics.push(new vscode.Diagnostic(
+                    range,
+                    'Consider using async file operations to avoid blocking',
+                    vscode.DiagnosticSeverity.Warning
+                ));
+            }
+            
+            // Check for nested loops (potential O(n²) complexity)
+            if (trimmedLine.includes('for') && index > 0) {
+                const prevLines = lines.slice(Math.max(0, index - 5), index);
+                if (prevLines.some(prevLine => prevLine.trim().includes('for'))) {
+                    const range = new vscode.Range(index, 0, index, line.length);
+                    diagnostics.push(new vscode.Diagnostic(
+                        range,
+                        'Nested loops detected - consider optimizing algorithm complexity',
+                        vscode.DiagnosticSeverity.Information
+                    ));
+                }
+            }
+        });
+    }
+
+    private detectSecurityVulnerabilities(lines: string[], diagnostics: vscode.Diagnostic[], document: vscode.TextDocument) {
+        lines.forEach((line, index) => {
+            const trimmedLine = line.trim();
+            
+            // Check for potential SQL injection
+            if (trimmedLine.includes('SELECT') && trimmedLine.includes('+')) {
+                const range = new vscode.Range(index, 0, index, line.length);
+                diagnostics.push(new vscode.Diagnostic(
+                    range,
+                    'Potential SQL injection - use parameterized queries',
+                    vscode.DiagnosticSeverity.Error
+                ));
+            }
+            
+            // Check for eval usage
+            if (trimmedLine.includes('eval(')) {
+                const range = new vscode.Range(index, 0, index, line.length);
+                diagnostics.push(new vscode.Diagnostic(
+                    range,
+                    'Avoid eval() - security risk and performance issue',
+                    vscode.DiagnosticSeverity.Error
+                ));
+            }
+            
+            // Check for hardcoded credentials
+            if (trimmedLine.includes('password') && trimmedLine.includes('=') && 
+                (trimmedLine.includes('"') || trimmedLine.includes("'"))) {
+                const range = new vscode.Range(index, 0, index, line.length);
+                diagnostics.push(new vscode.Diagnostic(
+                    range,
+                    'Potential hardcoded credential - use environment variables',
+                    vscode.DiagnosticSeverity.Error
+                ));
+            }
+        });
+    }
+
+    private checkBestPractices(lines: string[], diagnostics: vscode.Diagnostic[], document: vscode.TextDocument) {
+        lines.forEach((line, index) => {
+            const trimmedLine = line.trim();
+            
+            // Check for TODO comments
+            if (trimmedLine.includes('TODO') || trimmedLine.includes('FIXME')) {
+                const range = new vscode.Range(index, 0, index, line.length);
+                diagnostics.push(new vscode.Diagnostic(
+                    range,
+                    'TODO/FIXME comment found - consider addressing this',
+                    vscode.DiagnosticSeverity.Information
+                ));
+            }
+            
+            // Check for magic numbers
+            const magicNumberRegex = /\b(?!0|1)\d{2,}\b/;
+            if (magicNumberRegex.test(trimmedLine) && !trimmedLine.includes('//')) {
+                const range = new vscode.Range(index, 0, index, line.length);
+                diagnostics.push(new vscode.Diagnostic(
+                    range,
+                    'Consider extracting magic number to a named constant',
+                    vscode.DiagnosticSeverity.Hint
+                ));
+            }
+            
+            // Check for empty catch blocks
+            if (trimmedLine.includes('catch') && index < lines.length - 1) {
+                const nextLine = lines[index + 1]?.trim();
+                if (nextLine === '}' || nextLine === '{}') {
+                    const range = new vscode.Range(index, 0, index + 1, lines[index + 1]?.length || 0);
+                    diagnostics.push(new vscode.Diagnostic(
+                        range,
+                        'Empty catch block - handle errors appropriately',
+                        vscode.DiagnosticSeverity.Warning
+                    ));
+                }
+            }
+        });
+    }
+
+    private applyMentorPersonality(diagnostics: vscode.Diagnostic[]) {
+        if (!this.profileManager) return;
+        
+        const activeProfile = this.profileManager.getActiveProfile();
+        if (!activeProfile) return;
+        
+        diagnostics.forEach(diagnostic => {
+            diagnostic.message = this.getMentorStyledMessage(diagnostic.message, activeProfile);
+            diagnostic.source = activeProfile.name;
+        });
+    }
+
+    private getMentorStyledMessage(originalMessage: string, activeProfile: any): string {
+        const mentorName = activeProfile.name;
+        
+        // Apply mentor personality to the message
+        switch (activeProfile.id) {
+            case 'marcus':
+                return `${mentorName}: ${originalMessage} Stop making rookie mistakes!`;
+            case 'sophia':
+                return `${mentorName}: Oh look, another "TODO"... ${originalMessage} Maybe actually do it this time?`;
+            case 'alex':
+                return `${mentorName}: Great job adding a TODO! ${originalMessage} You're making excellent progress!`;
+            default:
+                return `${mentorName}: ${originalMessage}`;
+        }
     }
 
     private getSeverityBasedOnEmpathy(behaviorAnalysis: UserBehaviorAnalysis | null): vscode.DiagnosticSeverity {

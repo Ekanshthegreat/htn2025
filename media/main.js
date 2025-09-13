@@ -7,7 +7,7 @@
     const explainBtn = document.getElementById('explainBtn');
     const codeInput = document.getElementById('codeInput');
     const statusText = document.getElementById('statusText');
-    const profileSelect = document.getElementById('profileSelect');
+    const mentorSelect = document.getElementById('mentorSelect');
 
     // Event listeners
     clearBtn.addEventListener('click', () => {
@@ -33,13 +33,18 @@
         }
     });
 
-    profileSelect.addEventListener('change', (e) => {
-        const profileId = e.target.value;
-        if (profileId) {
+    // Mentor dropdown selection
+    mentorSelect.addEventListener('change', (e) => {
+        const mentorId = e.target.value;
+        if (mentorId) {
+            // Send message to extension
             vscode.postMessage({ 
                 type: 'switchProfile', 
-                profileId: profileId 
+                profileId: mentorId 
             });
+            
+            // Update status to show mentor is switching
+            updateStatus(`Switching to ${getMentorName(mentorId)}...`);
         }
     });
 
@@ -55,7 +60,7 @@
                 updateStatus(message.status);
                 break;
             case 'updateProfiles':
-                updateProfileSelector(message.profiles, message.activeProfileId);
+                updateActiveMentor(message.activeProfileId);
                 updateMentorName(message.activeMentorName);
                 break;
         }
@@ -192,38 +197,39 @@
         }
     }
 
-    function updateProfileSelector(profiles, activeProfileId) {
-        profileSelect.innerHTML = '';
-        
-        profiles.forEach(profile => {
-            const option = document.createElement('option');
-            option.value = profile.id;
-            option.textContent = `${profile.name}${profile.githubUsername ? ` (@${profile.githubUsername})` : ''}`;
-            if (profile.id === activeProfileId) {
-                option.selected = true;
-            }
-            profileSelect.appendChild(option);
-        });
+    function updateActiveMentor(activeProfileId) {
+        // Update dropdown selection
+        if (activeProfileId && mentorSelect) {
+            mentorSelect.value = activeProfileId;
+        }
+    }
+
+    function getMentorName(mentorId) {
+        const mentorNames = {
+            'marcus': 'Marcus "The Hammer"',
+            'sophia': 'Sophia "Sass"', 
+            'alex': 'Alex "Sunshine"'
+        };
+        return mentorNames[mentorId] || 'AI Mentor';
     }
 
     function updateMentorName(mentorName) {
         console.log('Updating mentor name to:', mentorName);
-        if (mentorName && mentorName !== 'AI Mentor') {
-            // Update the header to show the active mentor
-            const headerElement = document.querySelector('#mentorTitle');
-            if (headerElement) {
-                headerElement.textContent = `🤖 ${mentorName}`;
-            }
-            
-            // Update welcome message if it exists
-            const welcomeMessage = document.querySelector('.welcome-message h3');
-            if (welcomeMessage) {
-                welcomeMessage.textContent = `👋 Welcome! I'm ${mentorName}`;
-            }
-            
-            // Update status to show active mentor
-            updateStatus(`${mentorName} is ready to help`);
+        
+        // Always update the header to show the active mentor
+        const headerElement = document.querySelector('#mentorTitle');
+        if (headerElement) {
+            headerElement.textContent = `🤖 ${mentorName || 'AI Mentor'}`;
         }
+        
+        // Update welcome message if it exists
+        const welcomeMessage = document.querySelector('.welcome-message h3');
+        if (welcomeMessage) {
+            welcomeMessage.textContent = `👋 Welcome! I'm ${mentorName || 'AI Mentor'}`;
+        }
+        
+        // Update status to show active mentor
+        updateStatus(`${mentorName || 'AI Mentor'} is ready to help`);
     }
 
     function escapeHtml(text) {
@@ -232,6 +238,8 @@
         return div.innerHTML;
     }
 
-    // Initialize
-    updateStatus('Ready to help');
+    // Initialize with Marcus as default active mentor
+    updateActiveMentor('marcus');
+    updateMentorName('Marcus "The Hammer" Thompson');
+    updateStatus('Marcus "The Hammer" is ready to help');
 })();

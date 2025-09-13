@@ -224,3 +224,32 @@ body {
 .messages-container::-webkit-scrollbar-thumb:hover {
     background: var(--vscode-scrollbarSlider-activeBackground);
 }
+
+/* Header Controls */
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.mentor-dropdown {
+    padding: 6px 12px;
+    background-color: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 4px;
+    font-size: 13px;
+    min-width: 200px;
+    cursor: pointer;
+}
+
+.mentor-dropdown:focus {
+    outline: none;
+    border-color: var(--vscode-focusBorder);
+}
+
+.mentor-dropdown option {
+    background-color: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    padding: 4px;
+}

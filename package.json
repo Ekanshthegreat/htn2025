@@ -52,8 +52,8 @@
         "category": "AI Mentor Profiles"
       },
       {
-        "command": "aiMentor.importGithubProfile",
-        "title": "📥 Import from GitHub",
+        "command": "aiMentor.selectMentor",
+        "title": "🎭 Select Mentor Personality",
         "category": "AI Mentor Profiles"
       },
       {
@@ -137,33 +137,8 @@
         },
         "aiMentor.activeProfile": {
           "type": "string",
-          "default": "default",
+          "default": "marcus",
           "description": "Currently active mentor profile ID"
-        },
-        "aiMentor.githubToken": {
-          "type": "string",
-          "description": "GitHub personal access token for profile analysis"
-        },
-        "aiMentor.genesysClientId": {
-          "type": "string",
-          "description": "Genesys Cloud OAuth Client ID"
-        },
-        "aiMentor.genesysClientSecret": {
-          "type": "string",
-          "description": "Genesys Cloud OAuth Client Secret"
-        },
-        "aiMentor.genesysDivision": {
-          "type": "string",
-          "description": "Genesys Cloud Division/Team Code"
-        },
-        "aiMentor.genesysAccessToken": {
-          "type": "string",
-          "description": "Genesys Cloud Access Token (optional - overrides OAuth flow)"
-        },
-        "aiMentor.genesysEnvironment": {
-          "type": "string",
-          "default": "mypurecloud.com",
-          "description": "Genesys Cloud environment (e.g., mypurecloud.com, mypurecloud.ie)"
         }
       }
     }
