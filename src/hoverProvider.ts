@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ProfileManager, MentorProfile } from './profileManager';
 import { ASTAnalyzer } from './astAnalyzer';
+import { MentorPersonalityService } from './mentorPersonality';
 
 interface CodeElementAnalysis {
     type: 'function' | 'class' | 'variable' | 'method' | 'unknown';
@@ -24,10 +25,14 @@ interface FileAnalysis {
 }
 
 export class MentorHoverProvider implements vscode.HoverProvider {
+    private personalityService: MentorPersonalityService;
+
     constructor(
         private profileManager: ProfileManager,
         private astAnalyzer: ASTAnalyzer
-    ) {}
+    ) {
+        this.personalityService = new MentorPersonalityService();
+    }
 
     async provideHover(
         document: vscode.TextDocument,
@@ -101,9 +106,18 @@ export class MentorHoverProvider implements vscode.HoverProvider {
         // Analyze specific code elements
         const elementAnalysis = this.analyzeCodeElement(word, lineText, context, languageId);
         
+        // Update personality service with current profile
+        this.personalityService.setCurrentProfile(profile);
+        
         // Generate custom suggestions based on the specific element and full file context
         const customSuggestions = this.getCustomSuggestions(elementAnalysis, profile, fileAnalysis);
         suggestions.push(...customSuggestions);
+        
+        // Add personalized comments based on GitHub profile analysis
+        const personalizedComment = this.personalityService.getPersonalizedComment(lineText, context);
+        if (personalizedComment) {
+            suggestions.push(personalizedComment);
+        }
         
         // Generate context-aware architectural suggestions
         const architecturalSuggestions = this.getContextualArchitecturalSuggestions(word, lineText, fileAnalysis, profile, position);
@@ -201,23 +215,90 @@ export class MentorHoverProvider implements vscode.HoverProvider {
 
     private getCustomSuggestions(analysis: CodeElementAnalysis, profile: MentorProfile, fileAnalysis?: FileAnalysis): string[] {
         const suggestions: string[] = [];
-        const mentorId = profile.id;
-
-        switch (analysis.type) {
-            case 'function':
-                suggestions.push(...this.getFunctionSpecificAdvice(analysis, mentorId));
-                break;
-            case 'class':
-                suggestions.push(...this.getClassSpecificAdvice(analysis, mentorId));
-                break;
-            case 'variable':
-                suggestions.push(...this.getVariableSpecificAdvice(analysis, mentorId));
-                break;
-            case 'method':
-                suggestions.push(...this.getMethodSpecificAdvice(analysis, mentorId));
-                break;
+        
+        // Use GitHub profile-based suggestions when available
+        if (profile.githubUsername) {
+            const personalizedSuggestions = this.getGitHubProfileBasedSuggestions(analysis, profile, fileAnalysis);
+            suggestions.push(...personalizedSuggestions);
+        } else {
+            // Fallback to generic suggestions
+            const mentorId = profile.id;
+            switch (analysis.type) {
+                case 'function':
+                    suggestions.push(...this.getFunctionSpecificAdvice(analysis, mentorId));
+                    break;
+                case 'class':
+                    suggestions.push(...this.getClassSpecificAdvice(analysis, mentorId));
+                    break;
+                case 'variable':
+                    suggestions.push(...this.getVariableSpecificAdvice(analysis, mentorId));
+                    break;
+                case 'method':
+                    suggestions.push(...this.getMethodSpecificAdvice(analysis, mentorId));
+                    break;
+            }
         }
 
+        return suggestions;
+    }
+
+    private getGitHubProfileBasedSuggestions(analysis: CodeElementAnalysis, profile: MentorProfile, fileAnalysis?: FileAnalysis): string[] {
+        const suggestions: string[] = [];
+        const expertise = profile.personality.expertise;
+        const focusAreas = profile.personality.focusAreas;
+        const username = profile.githubUsername!;
+        const feedbackApproach = profile.personality.feedbackApproach;
+        
+        // Generate highly specific suggestions based on the mentor's actual expertise
+        switch (analysis.type) {
+            case 'function':
+                if (expertise.includes('functional-programming')) {
+                    suggestions.push(`**🔍 ${profile.name} (Functional Programming):** Consider making this function pure - avoid side effects and ensure it returns the same output for the same input. This makes testing and reasoning about your code much easier.`);
+                }
+                if (expertise.includes('performance') && analysis.characteristics.includes('long-function')) {
+                    suggestions.push(`**⚡ ${profile.name} (Performance):** This function is quite long. From a performance perspective, consider breaking it into smaller functions - it improves both readability and allows for better optimization by the JavaScript engine.`);
+                }
+                if (expertise.includes('testing') && !analysis.characteristics.includes('has-return')) {
+                    suggestions.push(`**🧪 ${profile.name} (Testing):** Functions without return values are harder to test. Consider returning a value or at least a success indicator to make this function more testable.`);
+                }
+                break;
+                
+            case 'class':
+                if (expertise.includes('object-oriented') || expertise.includes('design-patterns')) {
+                    suggestions.push(`**🏗️ ${profile.name} (OOP Design):** Great class structure! Make sure it follows the Single Responsibility Principle. ${focusAreas.includes('testing') ? 'Also consider dependency injection to make it more testable.' : 'Each class should have one reason to change.'}`);
+                }
+                if (expertise.includes('typescript') && analysis.characteristics.includes('inheritance')) {
+                    suggestions.push(`**📝 ${profile.name} (TypeScript):** With inheritance, consider using interfaces for contracts and composition over inheritance when possible. TypeScript's type system really shines with well-defined interfaces.`);
+                }
+                break;
+                
+            case 'variable':
+                if (expertise.includes('javascript') && analysis.issues.includes('use-var')) {
+                    suggestions.push(`**🎯 ${profile.name} (Modern JS):** I see 'var' usage. In modern JavaScript, 'let' and 'const' provide block scoping which prevents many common bugs. ${expertise.includes('es6') ? 'ES6+ features like const/let are much safer.' : 'Consider the scope implications here.'}`);
+                }
+                if (expertise.includes('memory-management') && analysis.characteristics.includes('array')) {
+                    suggestions.push(`**🧠 ${profile.name} (Memory):** Array detected! Consider the memory implications - are you creating unnecessary copies? Methods like map() create new arrays, while forEach() doesn't.`);
+                }
+                break;
+        }
+        
+        // Add username-specific expertise
+        if (username === 'torvalds') {
+            suggestions.push(`**🐧 Linus Torvalds:** Keep it simple and efficient. Avoid over-engineering - good code is code that works reliably and can be understood by others. No unnecessary abstractions!`);
+        } else if (username === 'gaearon') {
+            if (fileAnalysis?.patterns.includes('react')) {
+                suggestions.push(`**⚛️ Dan Abramov:** React patterns look good! Remember the principles: components should be predictable, debuggable, and have clear data flow. Avoid premature optimization.`);
+            }
+        } else if (username === 'sindresorhus') {
+            if (expertise.includes('node.js')) {
+                suggestions.push(`**📦 Sindre Sorhus:** Clean, focused modules are the way to go. Each function should do one thing well. Consider if this could be extracted into a reusable utility.`);
+            }
+        } else if (username === 'addyosmani') {
+            if (focusAreas.includes('performance')) {
+                suggestions.push(`**🚀 Addy Osmani:** Performance matters! Consider the bundle size impact, lazy loading opportunities, and whether this code is on the critical rendering path.`);
+            }
+        }
+        
         return suggestions;
     }
 
@@ -843,65 +924,85 @@ export class MentorHoverProvider implements vscode.HoverProvider {
         position: vscode.Position
     ): string[] {
         const suggestions: string[] = [];
-        const mentorId = profile.id;
-
-        // Analyze based on file context
-        if (fileAnalysis.complexity === 'high') {
-            switch (mentorId) {
-                case 'marcus':
-                    suggestions.push("**🔥 Architecture:** This file is a complexity nightmare! Break it down into smaller, focused modules before it becomes unmaintainable.");
-                    break;
-                case 'sophia':
-                    suggestions.push("**😏 Architecture:** Oh my, this file is quite the ambitious project, isn't it? Maybe consider some architectural refactoring?");
-                    break;
-                case 'alex':
-                    suggestions.push("**🌟 Architecture:** WOW! This file is doing SO MUCH! 🚀 Maybe we could split it into smaller, specialized modules? It'll be like organizing a superhero team! ✨");
-                    break;
+        const expertise = profile.personality?.expertise || [];
+        const focusAreas = profile.personality?.focusAreas || [];
+        const username = profile.githubUsername;
+        
+        // Highly personalized architecture suggestions based on GitHub profile
+        if (username && expertise.length > 0) {
+            // Microservices expertise
+            if (expertise.includes('microservices') && fileAnalysis.imports.length > 10) {
+                suggestions.push(`**🏗️ ${profile.name} (Microservices):** Too many imports suggest this module might be doing too much. In microservices architecture, each service should have a single responsibility. Consider splitting this into focused modules.`);
             }
-        }
-
-        // Dependency-specific suggestions
-        if (fileAnalysis.dependencies.length > 10) {
-            switch (mentorId) {
-                case 'marcus':
-                    suggestions.push(`**🔥 Dependencies:** ${fileAnalysis.dependencies.length} dependencies? This is dependency hell! Audit these imports and remove what you don't need.`);
-                    break;
-                case 'sophia':
-                    suggestions.push(`**😏 Dependencies:** ${fileAnalysis.dependencies.length} dependencies... Someone's been shopping in the npm store, haven't they?`);
-                    break;
-                case 'alex':
-                    suggestions.push(`**🌟 Dependencies:** ${fileAnalysis.dependencies.length} dependencies! You're building on the work of SO MANY developers! 🌍 Just make sure we're using them all! ✨`);
-                    break;
+            
+            // React expertise with specific patterns
+            if (expertise.includes('react')) {
+                if (word === 'useState' || word === 'useEffect') {
+                    suggestions.push(`**⚛️ ${profile.name} (React):** ${word} detected! Key rules: only call hooks at the top level, never in loops/conditions. For useEffect, always include dependencies in the array to prevent stale closures.`);
+                }
+                if (lineText.includes('class') && lineText.includes('Component')) {
+                    suggestions.push(`**⚛️ ${profile.name} (React):** Class component spotted! Consider migrating to functional components with hooks for better performance and simpler testing.`);
+                }
             }
-        }
-
-        // Pattern-specific suggestions
-        if (fileAnalysis.patterns.includes('react-hooks') && word.includes('use')) {
-            switch (mentorId) {
-                case 'marcus':
-                    suggestions.push(`**🔥 Hook '${word}':** React hooks better follow the rules of hooks. No conditional calls, no nested functions. Don't make me debug your hook violations.`);
-                    break;
-                case 'sophia':
-                    suggestions.push(`**😏 Hook '${word}':** Ah, React hooks! Just remember the rules - they're not suggestions, they're laws of the React universe.`);
-                    break;
-                case 'alex':
-                    suggestions.push(`**🌟 Hook '${word}':** REACT HOOKS! 🎣 You're using modern React patterns! That's AMAZING! Just remember to follow the rules of hooks! ✨`);
-                    break;
+            
+            // Node.js specific patterns
+            if (expertise.includes('node.js')) {
+                if (lineText.includes('require(')) {
+                    suggestions.push(`**📦 ${profile.name} (Node.js):** CommonJS require detected. ES modules (import/export) provide better tree-shaking, static analysis, and are the future of JavaScript modules.`);
+                }
+                if (lineText.includes('fs.') && !lineText.includes('await')) {
+                    suggestions.push(`**📦 ${profile.name} (Node.js):** File system operation detected. Consider using the async versions (fs.promises) to avoid blocking the event loop.`);
+                }
             }
-        }
-
-        // Code smell suggestions
-        if (fileAnalysis.codeSmells.includes('debug-statements')) {
-            switch (mentorId) {
-                case 'marcus':
-                    suggestions.push("**🔥 Code Quality:** Console.log statements everywhere? Clean up your debugging mess before shipping this code.");
-                    break;
-                case 'sophia':
-                    suggestions.push("**😏 Code Quality:** I see we're fans of console.log debugging. How... traditional. Ever heard of a debugger?");
-                    break;
-                case 'alex':
-                    suggestions.push("**🌟 Code Quality:** I see some console.log statements! 📝 They're great for debugging! Maybe we could use a proper logging library for production? ✨");
-                    break;
+            
+            // Performance focus
+            if (focusAreas.includes('performance')) {
+                if (fileAnalysis.complexity === 'high') {
+                    suggestions.push(`**⚡ ${profile.name} (Performance):** High complexity file detected. Consider code splitting, lazy loading, or breaking into smaller chunks. Large bundles hurt initial load time.`);
+                }
+                if (lineText.includes('map(') && lineText.includes('filter(')) {
+                    suggestions.push(`**⚡ ${profile.name} (Performance):** Chained array methods detected. Consider combining map/filter operations to reduce iterations over large datasets.`);
+                }
+            }
+            
+            // Testing focus
+            if (expertise.includes('testing') || focusAreas.includes('testing')) {
+                if (fileAnalysis.functions.length > 5 && !fileAnalysis.patterns.includes('test')) {
+                    suggestions.push(`**🧪 ${profile.name} (Testing):** ${fileAnalysis.functions.length} functions without tests. Each function should have corresponding tests - they're living documentation and prevent regressions.`);
+                }
+                if (lineText.includes('async') && !lineText.includes('await')) {
+                    suggestions.push(`**🧪 ${profile.name} (Testing):** Async function without await? Make sure you're properly testing async behavior with proper assertions.`);
+                }
+            }
+            
+            // Security focus
+            if (focusAreas.includes('security')) {
+                if (lineText.includes('eval(') || lineText.includes('innerHTML')) {
+                    suggestions.push(`**🔒 ${profile.name} (Security):** Potential security risk detected! eval() and innerHTML can lead to XSS vulnerabilities. Consider safer alternatives like textContent or proper sanitization.`);
+                }
+            }
+            
+            // TypeScript expertise
+            if (expertise.includes('typescript')) {
+                if (lineText.includes('any') || lineText.includes('as any')) {
+                    suggestions.push(`**📝 ${profile.name} (TypeScript):** 'any' type defeats the purpose of TypeScript! Consider using proper types, generics, or union types for better type safety.`);
+                }
+            }
+        } else {
+            // Fallback to generic suggestions for non-GitHub profiles
+            const mentorId = profile.id;
+            if (fileAnalysis.complexity === 'high') {
+                switch (mentorId) {
+                    case 'marcus':
+                        suggestions.push("**🔥 Architecture:** This file is a complexity nightmare! Break it down into smaller, focused modules before it becomes unmaintainable.");
+                        break;
+                    case 'sophia':
+                        suggestions.push("**😏 Architecture:** Oh my, this file is quite the ambitious project, isn't it? Maybe consider some architectural refactoring?");
+                        break;
+                    case 'alex':
+                        suggestions.push("**🌟 Architecture:** WOW! This file is doing SO MUCH! 🚀 Maybe we could split it into smaller, specialized modules? It'll be like organizing a superhero team! ✨");
+                        break;
+                }
             }
         }
 

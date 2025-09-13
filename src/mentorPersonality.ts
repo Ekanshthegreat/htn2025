@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { MentorProfile } from './profileManager';
 
 export interface MentorPersonality {
     name: string;
@@ -9,6 +10,13 @@ export interface MentorPersonality {
     encouragement: string[];
     warnings: string[];
     debuggingApproach: string;
+}
+
+export interface PersonalizedComment {
+    message: string;
+    tone: 'encouraging' | 'direct' | 'analytical' | 'pragmatic';
+    expertise: string[];
+    context: string;
 }
 
 export const TESLA_MENTOR: MentorPersonality = {
@@ -42,6 +50,7 @@ export const TESLA_MENTOR: MentorPersonality = {
 
 export class MentorPersonalityService {
     private currentPersonality: MentorPersonality = TESLA_MENTOR;
+    private currentProfile: MentorProfile | null = null;
     
     getGreeting(): string {
         return this.currentPersonality.greeting;
@@ -83,7 +92,196 @@ export class MentorPersonalityService {
         }
     }
     
-    getProactiveComment(codePattern: string): string {
+    setCurrentProfile(profile: MentorProfile | null): void {
+        this.currentProfile = profile;
+    }
+
+    getPersonalizedComment(codePattern: string, context: string = ''): string {
+        if (!this.currentProfile || !this.currentProfile.githubUsername) {
+            return this.getGenericComment(codePattern);
+        }
+
+        return this.generatePersonalizedComment(codePattern, context, this.currentProfile);
+    }
+
+    private generatePersonalizedComment(codePattern: string, context: string, profile: MentorProfile): string {
+        const expertise = profile.personality.expertise;
+        const focusAreas = profile.personality.focusAreas;
+        const communicationStyle = profile.personality.communicationStyle;
+        const feedbackApproach = profile.personality.feedbackApproach;
+        const username = profile.githubUsername!;
+
+        // Generate highly personalized comments based on the mentor's actual GitHub profile
+        const personalizedComments = this.getPersonalizedCommentsByPattern(codePattern, {
+            username,
+            expertise,
+            focusAreas,
+            communicationStyle,
+            feedbackApproach,
+            context
+        });
+
+        if (personalizedComments.length > 0) {
+            const randomComment = personalizedComments[Math.floor(Math.random() * personalizedComments.length)];
+            return this.formatPersonalizedCodeReview(randomComment, profile);
+        }
+
+        return this.getGenericComment(codePattern);
+    }
+
+    private getPersonalizedCommentsByPattern(pattern: string, mentorData: any): PersonalizedComment[] {
+        const { username, expertise, focusAreas, communicationStyle, feedbackApproach } = mentorData;
+        const comments: PersonalizedComment[] = [];
+
+        // Console.log patterns
+        if (pattern.includes('console.log')) {
+            if (expertise.includes('javascript') || expertise.includes('typescript')) {
+                comments.push({
+                    message: `I see console.log debugging! As someone who's worked extensively with ${expertise.filter(e => ['javascript', 'typescript', 'node.js'].includes(e.toLowerCase())).join(' and ')}, I recommend using a proper logging library like Winston or debug. Your production code will thank you.`,
+                    tone: feedbackApproach,
+                    expertise: ['javascript', 'debugging'],
+                    context: 'debugging'
+                });
+            }
+            if (focusAreas.includes('performance')) {
+                comments.push({
+                    message: `Console.log statements can impact performance in production. Based on my focus on performance optimization, consider using conditional logging or a logging library with levels.`,
+                    tone: 'analytical',
+                    expertise: ['performance'],
+                    context: 'performance'
+                });
+            }
+        }
+
+        // Variable declaration patterns
+        if (pattern.includes('var ')) {
+            if (expertise.includes('javascript') || expertise.includes('es6')) {
+                comments.push({
+                    message: `I notice you're using 'var'. In my ${expertise.includes('es6') ? 'ES6+' : 'modern JavaScript'} experience, 'let' and 'const' provide better scope control and prevent hoisting issues. This is especially important in ${expertise.includes('react') ? 'React components' : 'modern applications'}.`,
+                    tone: feedbackApproach,
+                    expertise: ['javascript', 'es6'],
+                    context: 'scope'
+                });
+            }
+        }
+
+        // Function patterns
+        if (pattern.includes('function') || pattern.includes('=>')) {
+            if (focusAreas.includes('code quality')) {
+                comments.push({
+                    message: `Great function structure! As someone focused on code quality, I always check: Does this function have a single responsibility? Is it testable? ${expertise.includes('testing') ? 'Consider adding unit tests for this function.' : 'Consider how you might test this function.'}`,
+                    tone: 'analytical',
+                    expertise: ['code-quality', 'testing'],
+                    context: 'architecture'
+                });
+            }
+            if (expertise.includes('functional-programming')) {
+                comments.push({
+                    message: `Nice function! With my functional programming background, I'd suggest keeping it pure if possible - avoid side effects and ensure predictable outputs for given inputs.`,
+                    tone: 'encouraging',
+                    expertise: ['functional-programming'],
+                    context: 'paradigm'
+                });
+            }
+        }
+
+        // Async patterns
+        if (pattern.includes('async') || pattern.includes('await') || pattern.includes('Promise')) {
+            if (expertise.includes('node.js') || expertise.includes('javascript')) {
+                comments.push({
+                    message: `Async code! From my ${expertise.includes('node.js') ? 'Node.js' : 'JavaScript'} experience, always remember error handling with try-catch blocks. ${focusAreas.includes('performance') ? 'Also consider if parallel execution with Promise.all() would be more efficient here.' : 'Unhandled promise rejections can crash your application.'}`,
+                    tone: feedbackApproach,
+                    expertise: ['async', 'error-handling'],
+                    context: 'async'
+                });
+            }
+        }
+
+        // Class patterns
+        if (pattern.includes('class ')) {
+            if (expertise.includes('object-oriented') || expertise.includes('typescript')) {
+                comments.push({
+                    message: `Class definition spotted! With my ${expertise.includes('typescript') ? 'TypeScript' : 'OOP'} background, I always check for proper encapsulation, single responsibility, and clear interfaces. ${focusAreas.includes('testing') ? 'Classes should be easily mockable for testing.' : 'Consider the SOLID principles here.'}`,
+                    tone: 'analytical',
+                    expertise: ['oop', 'design-patterns'],
+                    context: 'architecture'
+                });
+            }
+        }
+
+        // Import/require patterns
+        if (pattern.includes('import') || pattern.includes('require')) {
+            if (expertise.includes('webpack') || expertise.includes('bundling')) {
+                comments.push({
+                    message: `Import statement! With my bundling experience, consider tree-shaking implications. Import only what you need to keep bundle sizes optimal.`,
+                    tone: 'pragmatic',
+                    expertise: ['bundling', 'performance'],
+                    context: 'optimization'
+                });
+            }
+            if (focusAreas.includes('architecture')) {
+                comments.push({
+                    message: `Good modular structure! I always check for circular dependencies and proper dependency injection patterns. Clean architecture starts with clean imports.`,
+                    tone: 'encouraging',
+                    expertise: ['architecture'],
+                    context: 'modularity'
+                });
+            }
+        }
+
+        // Testing patterns
+        if (pattern.includes('test') || pattern.includes('describe') || pattern.includes('it(')) {
+            if (expertise.includes('testing') || expertise.includes('jest')) {
+                comments.push({
+                    message: `Love seeing tests! ${expertise.includes('jest') ? 'With Jest' : 'In my testing experience'}, focus on the AAA pattern: Arrange, Act, Assert. ${focusAreas.includes('code quality') ? 'Good tests are documentation for your code.' : 'Tests should be readable and maintainable.'}`,
+                    tone: 'encouraging',
+                    expertise: ['testing'],
+                    context: 'testing'
+                });
+            }
+        }
+
+        // Add username-specific patterns for well-known developers
+        if (username === 'torvalds') {
+            comments.push({
+                message: `This code structure reminds me of kernel development principles - keep it simple, efficient, and maintainable. No unnecessary abstractions!`,
+                tone: 'direct',
+                expertise: ['systems', 'c'],
+                context: 'systems'
+            });
+        } else if (username === 'gaearon') {
+            if (pattern.includes('useState') || pattern.includes('useEffect')) {
+                comments.push({
+                    message: `React hooks! Remember the rules of hooks - only call them at the top level, and use dependency arrays correctly in useEffect to avoid infinite re-renders.`,
+                    tone: 'analytical',
+                    expertise: ['react', 'hooks'],
+                    context: 'react'
+                });
+            }
+        }
+
+        return comments;
+    }
+
+    private formatPersonalizedCodeReview(comment: PersonalizedComment, profile: MentorProfile): string {
+        const icon = this.getIconForTone(comment.tone);
+        const name = profile.name;
+        const expertise = comment.expertise.length > 0 ? ` (${comment.expertise.join(', ')})` : '';
+        
+        return `${icon} ${name}${expertise}: ${comment.message}`;
+    }
+
+    private getIconForTone(tone: string): string {
+        switch (tone) {
+            case 'encouraging': return '🌟';
+            case 'direct': return '🎯';
+            case 'analytical': return '🔍';
+            case 'pragmatic': return '🔧';
+            default: return '💡';
+        }
+    }
+
+    private getGenericComment(codePattern: string): string {
         const comments = {
             'console.log': "I see you're debugging with console.log - brilliant for quick insights! But remember, in production code, we want clean energy flow.",
             'var': "Ah, using 'var'! While it works, 'let' and 'const' provide better electrical isolation - they prevent variable leakage across scopes!",
@@ -102,6 +300,10 @@ export class MentorPersonalityService {
         }
         
         return '';
+    }
+
+    getProactiveComment(codePattern: string): string {
+        return this.getPersonalizedComment(codePattern);
     }
     
     getTypingEncouragement(): string[] {
