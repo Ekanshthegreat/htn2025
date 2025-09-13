@@ -183,6 +183,15 @@
         "aiMentor.githubToken": {
           "type": "string",
           "description": "GitHub personal access token for profile analysis"
+        },
+        "aiMentor.genesysApiKey": {
+          "type": "string",
+          "description": "Genesys Cloud API key for empathy-driven user behavior analysis"
+        },
+        "aiMentor.genesysEnvironment": {
+          "type": "string",
+          "default": "mypurecloud.com",
+          "description": "Genesys Cloud environment (e.g., mypurecloud.com, mypurecloud.ie)"
         }
       }
     }

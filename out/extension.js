@@ -45,6 +45,7 @@ const graphiteService_1 = require("./graphiteService");
 const realtimeAnalyzer_1 = require("./realtimeAnalyzer");
 const profileManager_1 = require("./profileManager");
 const githubService_1 = require("./githubService");
+const genesysService_1 = require("./genesysService");
 let aiMentorProvider;
 let codeWatcher;
 let astAnalyzer;
@@ -54,11 +55,13 @@ let graphiteService;
 let realtimeAnalyzer;
 let profileManager;
 let githubService;
+let genesysService;
 function activate(context) {
     console.log('🚀 AI Debugger Mentor is now active!');
     // Initialize services
     profileManager = new profileManager_1.ProfileManager(context);
     githubService = new githubService_1.GitHubService();
+    genesysService = new genesysService_1.GenesysService();
     llmService = new llmService_1.LLMService(profileManager);
     astAnalyzer = new astAnalyzer_1.ASTAnalyzer();
     voiceService = new voiceService_1.VoiceService();
@@ -198,15 +201,16 @@ function activate(context) {
             return;
         try {
             vscode.window.showInformationMessage(`Analyzing GitHub profile: ${username}...`);
-            const profileData = await githubService.createProfileFromGitHub(username);
-            const profileId = `github-${username}-${Date.now()}`;
-            profileManager.addProfile({
-                id: profileId,
-                lastUpdated: new Date(),
-                isActive: false,
-                ...profileData
+            // Get GitHub data from GitHubService
+            const githubData = await githubService.analyzeProfile(username);
+            // Use ProfileManager's new method that integrates with Genesys
+            const profileId = await profileManager.createProfileFromGitHub(username, githubData);
+            vscode.window.showInformationMessage(`GitHub profile imported with empathy analysis! Profile ID: ${profileId}`, 'Set as Active').then(selection => {
+                if (selection === 'Set as Active') {
+                    profileManager.setActiveProfile(profileId);
+                    vscode.window.showInformationMessage(`Active profile set to: ${username}`);
+                }
             });
-            vscode.window.showInformationMessage(`Successfully imported GitHub profile: ${username}`);
         }
         catch (error) {
             vscode.window.showErrorMessage(`Failed to import GitHub profile: ${error}`);

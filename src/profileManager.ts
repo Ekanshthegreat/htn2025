@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { GenesysService } from './genesysService';
 
 export interface CodeStylePreferences {
     indentStyle: 'tabs' | 'spaces';
@@ -30,6 +31,12 @@ export interface MentorProfile {
         reviewPrompt: string;
         debuggingPrompt: string;
         explanationPrompt: string;
+    };
+    empathyData?: {
+        empathyPrompt: string;
+        developerPersona: string;
+        suggestedTone: 'supportive' | 'direct' | 'encouraging' | 'patient';
+        empathyScore: number;
     };
     lastUpdated: Date;
     isActive: boolean;
@@ -147,20 +154,39 @@ export class ProfileManager {
     }
 
 
-    public createProfileFromGitHub(githubUsername: string, name?: string): string {
+    public async createProfileFromGitHub(
+        githubUsername: string, 
+        githubData: any,
+        name?: string
+    ): Promise<string> {
         const profileId = `github-${githubUsername}-${Date.now()}`;
         
-        // This will be enhanced when we add GitHub integration
+        // Use Genesys to analyze GitHub profile for empathy-driven prompts
+        const genesysService = new GenesysService();
+        let empathyData;
+        
+        try {
+            empathyData = await genesysService.analyzeGitHubProfileForEmpathy(githubData);
+        } catch (error) {
+            console.warn('Failed to analyze GitHub profile with Genesys:', error);
+            empathyData = {
+                empathyPrompt: `You are mentoring a developer. Adjust your approach based on their needs.`,
+                developerPersona: `${githubUsername} developer`,
+                suggestedTone: 'supportive' as const,
+                empathyScore: 50
+            };
+        }
+
         const newProfile: MentorProfile = {
             id: profileId,
             name: name || githubUsername,
             githubUsername: githubUsername,
             personality: {
-                communicationStyle: 'supportive',
-                feedbackApproach: 'analytical',
-                expertise: ['github analysis pending'],
+                communicationStyle: empathyData.suggestedTone === 'direct' ? 'direct' : 'supportive',
+                feedbackApproach: empathyData.empathyScore > 70 ? 'encouraging' : 'analytical',
+                expertise: githubData.expertise || ['general programming'],
                 focusAreas: ['code review', 'best practices'],
-                responseLength: 'moderate'
+                responseLength: empathyData.empathyScore > 70 ? 'detailed' : 'moderate'
             },
             codeStylePreferences: {
                 indentStyle: 'spaces',
@@ -172,11 +198,12 @@ export class ProfileManager {
                 bracketSpacing: true
             },
             prompts: {
-                systemPrompt: `You are a coding mentor based on ${githubUsername}'s GitHub profile.`,
-                reviewPrompt: "Review this code based on the coding patterns and style preferences learned from the GitHub profile.",
-                debuggingPrompt: "Help debug this issue using the problem-solving approach characteristic of this mentor.",
-                explanationPrompt: "Explain this code in the communication style of this mentor."
+                systemPrompt: empathyData.empathyPrompt,
+                reviewPrompt: `${empathyData.empathyPrompt} Review this code with empathy and understanding.`,
+                debuggingPrompt: `${empathyData.empathyPrompt} Help debug this issue patiently.`,
+                explanationPrompt: `${empathyData.empathyPrompt} Explain this code clearly.`
             },
+            empathyData,
             lastUpdated: new Date(),
             isActive: false
         };
