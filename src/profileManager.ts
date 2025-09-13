@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { GitHubService } from './githubService';
 
 export interface CodeStylePreferences {
     indentStyle: 'tabs' | 'spaces';
@@ -45,9 +46,11 @@ export class ProfileManager {
     private profiles: Map<string, MentorProfile> = new Map();
     private activeProfileId: string = 'marcus';
     private context: vscode.ExtensionContext;
+    private githubService: GitHubService;
 
     constructor(context: vscode.ExtensionContext) {
         this.context = context;
+        this.githubService = new GitHubService();
         this.loadProfiles();
         this.initializeDefaultProfiles();
     }
@@ -219,27 +222,86 @@ export class ProfileManager {
     }
 
 
+    // Create mentor from GitHub profile
+    public async createMentorFromGitHub(
+        githubUsername: string, 
+        customName?: string
+    ): Promise<MentorProfile> {
+        try {
+            console.log(`Creating mentor from GitHub profile: ${githubUsername}`);
+            
+            const profileData = await this.githubService.createProfileFromGitHub(githubUsername, customName);
+            
+            const mentorProfile: MentorProfile = {
+                id: `github_${githubUsername.toLowerCase()}`,
+                name: profileData.name || githubUsername,
+                githubUsername: githubUsername,
+                avatar: profileData.avatar || '👨‍💻',
+                personality: profileData.personality || {
+                    communicationStyle: 'supportive',
+                    feedbackApproach: 'encouraging',
+                    expertise: [],
+                    focusAreas: ['code quality'],
+                    responseLength: 'moderate'
+                },
+                codeStylePreferences: profileData.codeStylePreferences || {
+                    indentStyle: 'spaces',
+                    indentSize: 2,
+                    maxLineLength: 100,
+                    preferredQuotes: 'single',
+                    semicolons: true,
+                    trailingCommas: true,
+                    bracketSpacing: true
+                },
+                prompts: profileData.prompts || {
+                    systemPrompt: `You are a coding mentor based on ${githubUsername}'s GitHub profile.`,
+                    reviewPrompt: 'Review this code and provide helpful feedback.',
+                    debuggingPrompt: 'Help debug this issue.',
+                    explanationPrompt: 'Explain this code clearly.'
+                },
+                lastUpdated: new Date(),
+                isActive: false
+            };
+            
+            this.addProfile(mentorProfile);
+            console.log(`Successfully created mentor profile for ${githubUsername}`);
+            
+            return mentorProfile;
+        } catch (error) {
+            console.error(`Failed to create mentor from GitHub profile ${githubUsername}:`, error);
+            throw new Error(`Failed to analyze GitHub profile: ${error.message}`);
+        }
+    }
+
     // Get available mentor profiles for UI selection
-    public getAvailableMentors(): Array<{id: string, name: string, avatar?: string, personality: string}> {
-        return [
-            {
-                id: 'marcus',
-                name: 'Marcus "The Hammer" Thompson',
-                avatar: '💀',
-                personality: 'Brutally honest and direct - will tear your code apart but make you better'
-            },
-            {
-                id: 'sophia',
-                name: 'Sophia "Sass" Rodriguez',
-                avatar: '😏',
-                personality: 'Sarcastic genius who uses wit and humor to teach you better coding'
-            },
-            {
-                id: 'alex',
-                name: 'Alex "Sunshine" Chen',
-                avatar: '🌟',
-                personality: 'Overwhelmingly positive and enthusiastic about everything you code'
-            }
-        ];
+    public getAvailableMentors(): Array<{id: string, name: string, avatar?: string, personality: string, isGitHubBased?: boolean}> {
+        const allProfiles = Array.from(this.profiles.values());
+        
+        return allProfiles.map(profile => ({
+            id: profile.id,
+            name: profile.name,
+            avatar: profile.avatar,
+            personality: this.getPersonalityDescription(profile),
+            isGitHubBased: !!profile.githubUsername
+        }));
+    }
+
+    private getPersonalityDescription(profile: MentorProfile): string {
+        if (profile.githubUsername) {
+            const expertise = profile.personality.expertise.slice(0, 3).join(', ');
+            return `GitHub-based mentor specializing in ${expertise || 'software development'} with ${profile.personality.communicationStyle} communication style`;
+        }
+        
+        // Fallback descriptions for hardcoded profiles
+        switch (profile.id) {
+            case 'marcus':
+                return 'Brutally honest and direct - will tear your code apart but make you better';
+            case 'sophia':
+                return 'Sarcastic genius who uses wit and humor to teach you better coding';
+            case 'alex':
+                return 'Overwhelmingly positive and enthusiastic about everything you code';
+            default:
+                return `${profile.personality.communicationStyle} mentor focusing on ${profile.personality.focusAreas.join(', ')}`;
+        }
     }
 }

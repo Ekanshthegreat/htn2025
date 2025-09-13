@@ -119,26 +119,74 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
+    const createGitHubMentorCommand = vscode.commands.registerCommand('aiMentor.createGitHubMentor', async () => {
+        const githubUsername = await vscode.window.showInputBox({
+            prompt: 'Enter GitHub username to create mentor from',
+            placeHolder: 'e.g., torvalds, gaearon, sindresorhus'
+        });
+
+        if (!githubUsername) return;
+
+        try {
+            vscode.window.showInformationMessage(`🔍 Analyzing GitHub profile: ${githubUsername}...`);
+            
+            const mentorProfile = await profileManager.createMentorFromGitHub(githubUsername);
+            
+            vscode.window.showInformationMessage(
+                `✅ Created GitHub-based mentor: ${mentorProfile.name}!`,
+                'Switch to Mentor'
+            ).then(choice => {
+                if (choice === 'Switch to Mentor') {
+                    profileManager.setActiveProfile(mentorProfile.id);
+                    vscode.window.showInformationMessage(`🎯 Now mentoring with ${mentorProfile.name}!`);
+                }
+            });
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to create GitHub mentor: ${error.message}`);
+        }
+    });
+
     const createProfileCommand = vscode.commands.registerCommand('aiMentor.createProfile', async () => {
-        const name = await vscode.window.showInputBox({
-            prompt: 'Enter a name for the new mentor profile',
-            placeHolder: 'e.g., Senior React Developer'
+        const options = [
+            {
+                label: '$(github) Create from GitHub Profile',
+                description: 'Analyze a GitHub profile to create a personalized mentor',
+                action: 'github'
+            },
+            {
+                label: '$(person) Create Custom Profile',
+                description: 'Manually create a custom mentor profile',
+                action: 'custom'
+            }
+        ];
+
+        const selection = await vscode.window.showQuickPick(options, {
+            placeHolder: 'How would you like to create a mentor profile?'
         });
 
-        if (!name) return;
+        if (selection?.action === 'github') {
+            vscode.commands.executeCommand('aiMentor.createGitHubMentor');
+        } else if (selection?.action === 'custom') {
+            const name = await vscode.window.showInputBox({
+                prompt: 'Enter a name for the new mentor profile',
+                placeHolder: 'e.g., Senior React Developer'
+            });
 
-        const profileId = `custom-${Date.now()}`;
-        const defaultProfile = profileManager.getProfile('default')!;
-        
-        profileManager.addProfile({
-            ...defaultProfile,
-            id: profileId,
-            name: name,
-            lastUpdated: new Date(),
-            isActive: false
-        });
+            if (!name) return;
 
-        vscode.window.showInformationMessage(`Created new mentor profile: ${name}`);
+            const profileId = `custom-${Date.now()}`;
+            const defaultProfile = profileManager.getProfile('marcus')!;
+            
+            profileManager.addProfile({
+                ...defaultProfile,
+                id: profileId,
+                name: name,
+                lastUpdated: new Date(),
+                isActive: false
+            });
+
+            vscode.window.showInformationMessage(`Created new mentor profile: ${name}`);
+        }
     });
 
     const selectMentorCommand = vscode.commands.registerCommand('aiMentor.selectMentor', async () => {
@@ -217,6 +265,7 @@ export function activate(context: vscode.ExtensionContext) {
         traceExecutionCommand,
         selectProfileCommand,
         createProfileCommand,
+        createGitHubMentorCommand,
         selectMentorCommand,
         manageProfilesCommand
     );
