@@ -90,9 +90,13 @@
     // Enhanced message handling with proactive analysis support
     window.addEventListener('message', event => {
         const message = event.data;
+        console.log('=== WEBVIEW RECEIVED MESSAGE ===');
+        console.log('Message type:', message.type);
+        console.log('Message data:', message);
         
         switch (message.type) {
             case 'updateMessages':
+                console.log('Processing updateMessages with', message.messages?.length || 0, 'messages');
                 hideTypingIndicator();
                 displayMessages(message.messages);
                 break;
@@ -131,22 +135,35 @@
     });
 
     function displayMessages(messages) {
-        if (messages.length === 0) return;
+        console.log('=== displayMessages called ===');
+        console.log('Messages array:', messages);
+        console.log('Messages length:', messages?.length || 0);
+        console.log('Messages container exists:', !!messagesContainer);
+        
+        if (!messages || messages.length === 0) {
+            console.log('No messages to display');
+            return;
+        }
 
         const welcomeMsg = messagesContainer.querySelector('.welcome-message');
         if (welcomeMsg && messages.length > 0) {
+            console.log('Hiding welcome message');
             welcomeMsg.style.opacity = '0';
             setTimeout(() => welcomeMsg?.remove(), 300);
         }
 
         messages.forEach((msg, index) => {
+            console.log(`Processing message ${index}:`, msg);
             if (!document.querySelector(`[data-message-id="${index}"]`)) {
+                console.log(`Adding new message ${index}`);
                 addMessage(msg, index);
                 conversationContext.push({
                     type: msg.type,
                     message: msg.message,
                     timestamp: Date.now()
                 });
+            } else {
+                console.log(`Message ${index} already exists, skipping`);
             }
         });
 
@@ -420,6 +437,138 @@
             const style = currentMentor.personality.communicationStyle;
             messageDiv.classList.add(`mentor-style-${style}`);
         }
+    }
+
+    // Typing indicator functions
+    function showTypingIndicator() {
+        if (!typingIndicator) {
+            typingIndicator = document.createElement('div');
+            typingIndicator.className = 'typing-indicator';
+            typingIndicator.innerHTML = `
+                <div class="typing-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <span class="typing-text">${currentMentor.name} is thinking...</span>
+            `;
+            messagesContainer.appendChild(typingIndicator);
+        }
+        typingIndicator.style.display = 'block';
+        smoothScrollToBottom();
+    }
+
+    function hideTypingIndicator() {
+        if (typingIndicator) {
+            typingIndicator.style.display = 'none';
+        }
+    }
+
+    function clearMessages() {
+        const messages = messagesContainer.querySelectorAll('.message');
+        messages.forEach(msg => msg.remove());
+        conversationContext = [];
+    }
+
+    function addSystemMessage(message) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message system';
+        messageDiv.innerHTML = `
+            <div class="message-header">
+                <span class="message-icon">🔄</span>
+                <span class="message-title">System</span>
+                <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
+            </div>
+            <div class="message-content">${message}</div>
+        `;
+        messagesContainer.appendChild(messageDiv);
+        smoothScrollToBottom();
+    }
+
+    function showMentorReaction(type) {
+        // Add visual feedback for mentor actions
+        const reaction = document.createElement('div');
+        reaction.className = `mentor-reaction ${type}`;
+        reaction.textContent = type === 'reset' ? '🔄' : '👋';
+        document.body.appendChild(reaction);
+        
+        setTimeout(() => {
+            reaction.remove();
+        }, 2000);
+    }
+
+    function showMentorTransition(fromId, toId) {
+        addSystemMessage(`Switching from ${fromId} to ${toId}...`);
+    }
+
+    function showVoiceIndicator(enabled) {
+        const indicator = document.querySelector('.voice-indicator');
+        if (indicator) {
+            indicator.style.display = enabled ? 'block' : 'none';
+        }
+    }
+
+    function updateMentorMood(mood) {
+        mentorMood = mood;
+        document.body.setAttribute('data-mentor-mood', mood);
+    }
+
+    function addHoverSuggestionMessage(suggestion) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message hover-suggestion';
+        messageDiv.innerHTML = `
+            <div class="message-header">
+                <span class="message-icon">💡</span>
+                <span class="message-title">Hover Suggestion</span>
+                <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
+            </div>
+            <div class="message-content">${suggestion}</div>
+        `;
+        messagesContainer.appendChild(messageDiv);
+        smoothScrollToBottom();
+    }
+
+    function addCodeFlowDiagram(diagram) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message diagram';
+        messageDiv.innerHTML = `
+            <div class="message-header">
+                <span class="message-icon">📊</span>
+                <span class="message-title">Code Flow Diagram</span>
+                <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
+            </div>
+            <div class="message-content">
+                <div class="mermaid">${diagram}</div>
+            </div>
+        `;
+        messagesContainer.appendChild(messageDiv);
+        
+        if (mermaidLoaded) {
+            mermaid.init(undefined, messageDiv.querySelector('.mermaid'));
+        }
+        
+        smoothScrollToBottom();
+    }
+
+    function addPerformanceMetrics(metrics) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message performance';
+        messageDiv.innerHTML = `
+            <div class="message-header">
+                <span class="message-icon">⚡</span>
+                <span class="message-title">Performance Metrics</span>
+                <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
+            </div>
+            <div class="message-content">
+                <div class="metrics-grid">
+                    ${Object.entries(metrics).map(([key, value]) => 
+                        `<div class="metric"><span class="metric-label">${key}:</span><span class="metric-value">${value}</span></div>`
+                    ).join('')}
+                </div>
+            </div>
+        `;
+        messagesContainer.appendChild(messageDiv);
+        smoothScrollToBottom();
     }
 
     // Interactive functions

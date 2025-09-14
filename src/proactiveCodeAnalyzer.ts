@@ -494,14 +494,14 @@ export class ProactiveCodeAnalyzer {
         let complexity = 1; // Base complexity
         
         path.traverse({
-            IfStatement: () => complexity++,
-            ConditionalExpression: () => complexity++,
-            LogicalExpression: () => complexity++,
-            SwitchCase: () => complexity++,
-            ForStatement: () => complexity++,
-            WhileStatement: () => complexity++,
-            DoWhileStatement: () => complexity++,
-            CatchClause: () => complexity++
+            IfStatement: () => { complexity++; },
+            ConditionalExpression: () => { complexity++; },
+            LogicalExpression: () => { complexity++; },
+            SwitchCase: () => { complexity++; },
+            ForStatement: () => { complexity++; },
+            WhileStatement: () => { complexity++; },
+            DoWhileStatement: () => { complexity++; },
+            CatchClause: () => { complexity++; }
         });
 
         return complexity;

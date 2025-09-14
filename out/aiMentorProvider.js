@@ -62,15 +62,23 @@ class AIMentorProvider {
         // For now, we'll add a method to receive messages
     }
     addMessage(response) {
+        console.log('=== AIMentorProvider.addMessage called ===');
+        console.log('Response:', response);
+        console.log('Current messages count:', this.messages.length);
         this.messages.push(response);
+        console.log('Messages after push:', this.messages.length);
         this.updateWebview();
     }
     updateWebview() {
+        console.log('=== AIMentorProvider.updateWebview called ===');
+        console.log('View exists:', !!this._view);
+        console.log('Messages to send:', this.messages.length, this.messages);
         if (this._view) {
             this._view.webview.postMessage({
                 type: 'updateMessages',
                 messages: this.messages
             });
+            console.log('Posted updateMessages to webview');
             // Also send profile data if available
             if (this.profileManager) {
                 try {
@@ -137,6 +145,23 @@ class AIMentorProvider {
     _getHtmlForWebview(webview) {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.css'));
+        // Get available profiles safely
+        let mentorOptions = '<option value="">No mentor profiles available</option>';
+        if (this.profileManager) {
+            try {
+                const profiles = this.profileManager.getAllProfiles();
+                const activeProfile = this.profileManager.getActiveProfile();
+                if (profiles && profiles.length > 0) {
+                    mentorOptions = profiles.map(profile => {
+                        const isSelected = activeProfile && profile.id === activeProfile.id ? 'selected' : '';
+                        return `<option value="${profile.id}" ${isSelected}>${profile.name}</option>`;
+                    }).join('');
+                }
+            }
+            catch (error) {
+                console.error('Error getting profiles for HTML generation:', error);
+            }
+        }
         return `<!DOCTYPE html>
             <html lang="en">
             <head>
@@ -154,9 +179,7 @@ class AIMentorProvider {
                         </div>
                         <div class="header-controls">
                             <select id="mentorSelect" class="mentor-dropdown">
-                                ${this.profileManager.getAvailableMentors().map(mentor => {
-            return `<option value="${mentor.id}" ${mentor.id === this.profileManager.activeProfileId ? 'selected' : ''}>${mentor.name}</option>`;
-        }).join('')}
+                                ${mentorOptions}
                             </select>
                             <button id="clearBtn" class="btn btn-secondary">Clear</button>
                         </div>
