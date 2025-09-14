@@ -872,4 +872,17 @@
     loadMermaid();
     updateMentorName('AI Mentor');
     updateStatus('AI Mentor is ready to help');
+    
+    // Add welcome animation
+    setTimeout(() => {
+        const welcome = document.querySelector('.welcome-message');
+        if (welcome) {
+            welcome.style.animation = 'fadeInUp 0.6s ease-out';
+        }
+    }, 500);
+
+    // Add event listener for voice chat button:
+    document.getElementById('voiceChatBtn').addEventListener('click', () => {
+        vscode.postMessage({ type: 'startVoiceChat' });
+    });
 })();

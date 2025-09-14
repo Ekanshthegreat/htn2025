@@ -8,6 +8,9 @@ node_modules/
 # VS Code extension development
 .vscode-test/
 *.vsix
+# VS Code Extension specific
+out/**
+dist/**
 
 # TypeScript
 *.tsbuildinfo

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html class="vapi-chat">
+<head>
+    <meta charset="utf-8" />
+    <title>Talk to Your Mentor</title>
+    <link rel="stylesheet" href="styles/vapi-chat.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-profile">
+                <a target="_blank" id="mentor-avatar-anchor"><img id="mentorAvatar" class="mentor-avatar-img" src="https://images.unsplash.com/photo-1545486332-9e0999c535b2?q=80&w=687&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="Mentor Avatar"></a>
+                <h1 id="mentorTitle">Loading mentor ...</h1>
+            </div>
+            <div class="header-controls">
+                <button id="connect" class="btn btn-primary">Start Conversation</button>
+                <button id="hang" class="btn" disabled>End Conversation</button>
+            </div>
+        </div>
+        <div id="log"></div>
+    </div>
+
+    <script type="module">
+        import Vapi from "https://esm.sh/@vapi-ai/web";
+
+        function logSlow(text, delay = 30) {
+            let i = 0;
+            const el = document.getElementById("log");
+            const whoPrefix = text.split(":")[0] + ":"; // keep prefix separate
+            const message = text.substring(text.indexOf(":") + 1);
+
+            const line = document.createElement("div");
+            line.textContent = whoPrefix + " ";
+            el.appendChild(line);
+
+            const interval = setInterval(() => {
+                line.textContent += message[i];
+                i++;
+                if (i >= message.length) {
+                clearInterval(interval);
+                el.scrollTop = el.scrollHeight; // auto-scroll to bottom
+                }
+            }, delay);
+        }
+
+        const log = (...a) => {
+            const el = document.getElementById("log");
+            el.textContent += a.join(" ") + "\n";
+            el.scrollTop = el.scrollHeight;
+        };
+
+        const connectBtn = document.getElementById("connect");
+        const hangBtn = document.getElementById("hang");
+        const titleEl = document.getElementById("mentorTitle");
+
+        // Initialize VAPI with your public key
+        const vapi = new Vapi("365fc87d-f1cb-46a1-9e20-be85b18aab41");
+
+        // Get mentor data from the server
+        async function getMentorData() {
+            const response = await fetch('http://localhost:3000/mentor-data');
+            const data = await response.json();
+            updateMentorAvatar(data);
+            return data;
+        }
+
+        // Update mentor avatar based on GitHub username or default avatar
+        async function updateMentorAvatar(mentorData) {
+            const avatarImg = document.getElementById('mentorAvatar');
+            const avatarAnchor = document.getElementById('mentor-avatar-anchor');
+            if (mentorData.githubUsername) {
+                avatarImg.src = `${mentorData.avatar || '' }`;
+                avatarAnchor.href = `https://github.com/${mentorData.githubUsername}`;
+            } else {
+                avatarImg.src = mentorData.avatar || 'default-avatar.png';
+                avatarAnchor.href = `#`;
+            }
+        }
+
+        // Wire up events
+        vapi.on("call-start", () => {
+            log("✅ Connected to mentor");
+            connectBtn.disabled = true;
+            hangBtn.disabled = false;
+        });
+
+        vapi.on("message", (m) => {
+            if (m.type === "transcript") {
+                const who = m.role === "user" ? "🧑 You" : "🤖 Mentor";
+                log(`${who}: ${m.transcript}`);
+            }
+        });
+
+        vapi.on("call-end", () => {
+            log("👋 Conversation ended");
+            connectBtn.disabled = false;
+            hangBtn.disabled = true;
+        });
+
+        // Connect handler
+        connectBtn.onclick = async () => {
+            try {
+                await navigator.mediaDevices.getUserMedia({ audio: true });
+                const mentorData = await getMentorData();
+                titleEl.innerHTML = `<span style="font-size: 0.8rem; color: #d7d7d7;">Talking with</span></br><span style="font-size: 1.5rem;">${mentorData.mentorName}</span>`;
+                
+                await vapi.start("8026e50f-8bd8-42e6-9f95-6176698aa424", {
+                    variableValues: mentorData
+                });
+            } catch (e) {
+                log("❌ Error:", e?.message || e);
+                connectBtn.disabled = false;
+                hangBtn.disabled = true;
+            }
+        };
+
+        hangBtn.onclick = async () => {
+            try { await vapi.stop(); } catch {}
+        };
+    </script>
+</body>
+</html>

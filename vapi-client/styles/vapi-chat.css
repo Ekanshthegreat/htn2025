@@ -1,0 +1,159 @@
+.vapi-chat body { 
+    font-family: system-ui; 
+    background: linear-gradient(135deg, #2A1B3D 0%, #44318D 100%);
+    color: #FFFFFF;
+    min-height: 100vh;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.vapi-chat .container {
+    width: 90%;
+    max-width: 720px;
+    padding: 4rem;
+    border-radius: 16px;
+    backdrop-filter: blur(10px);
+}
+
+.vapi-chat #log { 
+    border-radius: 12px;
+    padding: 2rem;
+    margin: 1rem 0;
+    font-size: 16px;
+    line-height: 1.6;
+}
+
+#log {
+    position: relative;
+    white-space: pre-wrap;
+    
+    height: 260px;
+    overflow-y: auto;
+    
+    /* Apply a mask (WebKit) or background-clip trick */
+    -webkit-mask-image: linear-gradient(to bottom,
+        rgba(0, 0, 0, 0) 0%,      /* transparent at top */
+        rgba(0, 0, 0, 1) 10%,     /* fully visible through middle */
+        rgba(0, 0, 0, 1) 90%, 
+        rgba(0, 0, 0, 0) 100%     /* transparent at bottom */
+    );
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-size: 100% 100%;
+    mask-image: linear-gradient(to bottom,
+        rgba(0, 0, 0, 0) 0%,
+        rgba(0, 0, 0, 1) 10%,
+        rgba(0, 0, 0, 1) 90%,
+        rgba(0, 0, 0, 0) 100%
+    );
+    mask-repeat: no-repeat;
+    mask-size: 100% 100%;
+}
+
+
+.vapi-chat .header { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+}
+
+.vapi-chat .header-profile { 
+    display: flex; 
+    align-items: center; 
+}
+
+.vapi-chat .mentor-avatar-img { 
+    width: 128px; 
+    height: 128px; 
+    border-radius: 50%; 
+    margin-right: 1rem;
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    transition: transform 0.3s ease;
+    animation: bob-swing 7s ease-in-out infinite;
+}
+
+.vapi-chat #mentor-avatar-anchor {
+    width: 128px; 
+    height: 128px; 
+    transition: transform 0.75s ease;
+}
+
+.vapi-chat #mentor-avatar-anchor:hover {
+    transform: scale(1.1);
+}
+
+@keyframes bob-swing {
+    0%, 100% {
+        transform: translateY(0) rotate(0deg);
+    }
+    25% {
+        transform: translateY(-4px) rotate(0deg);
+    }
+    50% {
+        transform: translateY(0) rotate(0deg);
+    }
+    75% {
+        transform: translateY(-4px) rotate(0deg);
+    }
+}
+
+.vapi-chat .mentor-avatar-img:hover {
+    transform: scale(1.1);
+}
+
+.vapi-chat .header-controls { 
+    display: flex; 
+    gap: 1rem;
+}
+
+.vapi-chat .btn { 
+    padding: 12px 24px;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.3s ease;
+}
+
+.vapi-chat .btn-primary { 
+    background-color: #9C27B0;
+    color: white;
+}
+
+.vapi-chat .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(74, 2, 92, 0.2);
+}
+
+.vapi-chat .btn:disabled { 
+    background: rgba(255, 255, 255, 0.1);
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.vapi-chat ::-webkit-scrollbar {
+    width: 8px;
+}
+
+.vapi-chat ::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.vapi-chat ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+}
+
+.vapi-chat ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.vapi-chat #mentorTitle {
+    margin: 1.5rem;
+    font-size: 24px;
+    color: #FFFFFF;
+}

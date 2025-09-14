@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { CodeWatcher } from './codeWatcher';
 import { LLMService, MentorResponse } from './llmService';
 import { ProfileManager } from './profileManager';
+import { VapiServer } from './vapiServer';
 import { interactionTracker } from './interactionTracker';
 
 export interface ConsolidatedMentorMessage {
@@ -56,6 +57,8 @@ export interface ConsolidatedMentorMessage {
 export class AIMentorProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'aiMentorPanel';
     private _view?: vscode.WebviewView;
+    // Change from private to public
+    public vapiServer?: VapiServer;
     private messages: ConsolidatedMentorMessage[] = [];
     private messageIdCounter = 0;
 
@@ -91,6 +94,8 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                 case 'switchProfile':
                     this.switchProfile(data.profileId);
                     break;
+                case 'startVoiceChat':
+                    this.startVoiceChat();
                 case 'analyzeCode':
                     this.addCodeAnalysis();
                     break;
@@ -470,6 +475,11 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
         }
     }
 
+
+    private async startVoiceChat() {
+        if (!this.vapiServer) {
+            this.vapiServer = new VapiServer(this.profileManager, {}); // {} = Message Context
+
     // Generate real AI suggestions for current code
     public async addCodeAnalysis() {
         const editor = vscode.window.activeTextEditor;
@@ -502,56 +512,84 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
             });
             return;
         }
-
-        // Show typing indicator
-        this.updateWebview();
-        if (this._view) {
-            this._view.webview.postMessage({ type: 'showTyping', mentor: 'AI Mentor' });
-        }
-
+        
         try {
-            // Use LLM service (now defaults to Gemini) for real analysis
-            const response = await this.llmService.sendMessage({
-                type: 'code_analysis',
-                fileName: document.fileName,
-                language: document.languageId,
-                code: code,
-                currentContent: code,
-                analysis: {
-                    complexity: this.calculateComplexity(code),
-                    patterns: this.detectPatterns(code, document.languageId),
-                    potentialIssues: this.detectPotentialIssues(code)
-                }
-            });
-
-            if (response) {
-                this.addMessage(response);
-            } else {
-                // Fallback response with more detailed analysis
-                this.addMessage({
-                    message: `🔍 Analyzed ${document.languageId} code in ${document.fileName}. Here's what I found:`,
-                    type: "explanation",
-                    suggestions: this.generateCodeSuggestions(code, document.languageId),
-                    insights: this.generateCodeInsights(code, document.languageId),
-                    warnings: this.detectWarnings(code, document.languageId),
-                    codeSnippets: this.generateImprovementSnippets(code, document.languageId)
-                });
-            }
+            const port = await this.vapiServer.start();
+            vscode.env.openExternal(vscode.Uri.parse(`http://localhost:${port}`));
         } catch (error) {
-            console.error('Code analysis error:', error);
-            this.addMessage({
-                message: "❌ Error analyzing code. Please check your Gemini API configuration.",
-                type: "warning",
-                suggestions: ["Set your Gemini API key: aiMentor.apiKey", "Ensure llmProvider is set to 'gemini'", "Try again in a moment"]
-            });
-        } finally {
-            // Hide typing indicator
-            if (this._view) {
-                this._view.webview.postMessage({ type: 'hideTyping' });
-            }
+            vscode.window.showErrorMessage('Failed to start voice chat: ' + error.message);
         }
     }
-    
+    // Generate real AI suggestions for current code
+    public async addCodeAnalysis() {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    this.addMessage({
+      message: "No active editor found. Please open a file to analyze.",
+      type: "warning",
+      suggestions: ["Open a code file in the editor", "Select some code to analyze"],
+    });
+    return;
+  }
+
+  const document = editor.document;
+  const selection = editor.selection;
+  const code = selection.isEmpty ? document.getText() : document.getText(selection);
+
+  if (!code.trim()) {
+    this.addMessage({
+      message: "No code found to analyze. The file appears to be empty.",
+      type: "warning",
+      suggestions: ["Write some code first", "Select a code snippet to analyze"],
+    });
+    return;
+  }
+
+  this.updateWebview();
+  this._view?.webview.postMessage({ type: "showTyping", mentor: "AI Mentor" });
+
+  try {
+    const response = await this.llmService.sendMessage({
+      type: "code_analysis",
+      fileName: document.fileName,
+      language: document.languageId,
+      code,
+      currentContent: code,
+      analysis: {
+        complexity: this.calculateComplexity(code),
+        patterns: this.detectPatterns(code, document.languageId),
+        potentialIssues: this.detectPotentialIssues(code),
+      },
+    });
+
+    if (response) {
+      this.addMessage(response);
+    } else {
+      this.addMessage({
+        message: `🔍 Analyzed ${document.languageId} code in ${document.fileName}. Here's what I found:`,
+        type: "explanation",
+        suggestions: this.generateCodeSuggestions(code, document.languageId),
+        insights: this.generateCodeInsights(code, document.languageId),
+        warnings: this.detectWarnings(code, document.languageId),
+        codeSnippets: this.generateImprovementSnippets(code, document.languageId),
+      });
+    }
+  } catch (error: unknown) {
+    console.error("Code analysis error:", error);
+    this.addMessage({
+      message: "❌ Error analyzing code. Please check your Gemini API configuration.",
+      type: "warning",
+      suggestions: [
+        "Set your Gemini API key: aiMentor.apiKey",
+        "Ensure llmProvider is set to 'gemini'",
+        "Try again in a moment",
+      ],
+    });
+  } finally {
+    this._view?.webview.postMessage({ type: "hideTyping" });
+  }
+}
+
     private calculateComplexity(code: string): string {
         const lines = code.split('\n').length;
         const functions = (code.match(/function|def |class |const \w+\s*=/g) || []).length;
@@ -861,6 +899,13 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
             <body>
                 <div class="container">
                     <div class="header">
+                        <h2 id="mentorTitle">🤖 AI Mentor</h2>
+                        <div class="header-controls">
+                            <select id="mentorSelect" class="mentor-dropdown">
+                                ${this.profileManager.getAvailableMentors().map(mentor => {
+                                    return `<option value="${mentor.id}" ${mentor.id === this.profileManager.activeProfileId ? 'selected' : ''}>${mentor.name}</option>`;
+                                }).join('')}
+                            </select>
                         <div class="mentor-info">
                             <img id="mentorAvatar" class="mentor-avatar-img" src="https://avatars.githubusercontent.com/u/60302907?v=4" alt="Mentor Avatar" />
                             <div class="mentor-details">
@@ -898,6 +943,12 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                         </div>
                     </div>
 
+                    <div class="input-section">
+                        <textarea id="codeInput" placeholder="Paste code here for explanation..."></textarea>
+                        <button id="explainBtn" class="btn btn-primary">Explain Code</button>
+                    </div>
+                    <button id="voiceChatBtn" class="btn btn-success">🎤 Speak to Mentor</button>
+                </div>  
                 </div>
 
                 <script src="${scriptUri}"></script>
@@ -905,3 +956,4 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
             </html>`;
     }
 }
+ 
