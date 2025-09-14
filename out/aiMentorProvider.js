@@ -67,7 +67,6 @@ class AIMentorProvider {
         console.log('Response:', response);
         console.log('Current messages count:', this.messages.length);
         this.messages.push(response);
-        console.log('Messages after push:', this.messages.length);
         const activeProfile = this.profileManager?.getActiveProfile();
         if (activeProfile) {
             interactionTracker_1.interactionTracker.logInteraction({
@@ -77,6 +76,7 @@ class AIMentorProvider {
                 data: response
             });
         }
+        console.log('Messages after push:', this.messages.length);
         this.updateWebview();
     }
     updateWebview() {

@@ -417,16 +417,10 @@
     function updateMentorName(mentorName) {
         console.log('Updating mentor name to:', mentorName);
         
-        // Always update the header to show the active mentor with profile photo
+        // Update only the header title text, not the avatar (avatar is handled separately)
         const headerElement = document.querySelector('#mentorTitle');
         if (headerElement) {
-            const activeProfile = availableProfiles.find(p => p.id === currentMentor.id);
-            if (activeProfile && activeProfile.githubUsername) {
-                const avatarUrl = `https://github.com/${activeProfile.githubUsername}.png?size=32`;
-                headerElement.innerHTML = `<img src="${avatarUrl}" class="mentor-avatar-img" alt="${mentorName}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';"> <span class="fallback-avatar" style="display:none;">🤖</span> ${mentorName || 'AI Mentor'}`;
-            } else {
-                headerElement.textContent = `🤖 ${mentorName || 'AI Mentor'}`;
-            }
+            headerElement.textContent = mentorName || 'AI Mentor';
         }
         
         const welcomeMessage = document.querySelector('.welcome-message h3');
