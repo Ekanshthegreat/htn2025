@@ -98,6 +98,10 @@
           "default": "gemini",
           "description": "LLM provider to use for AI analysis"
         },
+        "aiMentor.apiKey": {
+          "type": "string",
+          "description": "API key for the selected LLM provider (Gemini or OpenAI)"
+        },
         "aiMentor.githubToken": {
           "type": "string",
           "description": "GitHub API token for profile analysis"
