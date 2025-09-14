@@ -3,6 +3,8 @@ import { LLMService } from './llmService';
 import { VoiceService } from './voiceService';
 import { ProfileManager } from './profileManager';
 import { GenesysService, UserBehaviorAnalysis } from './genesysService';
+import { IntelligentRateLimiter, CodeChange, AnalysisRequest } from './intelligentRateLimiter';
+import { ProactiveCodeAnalyzer, ProactiveIssue } from './proactiveCodeAnalyzer';
 
 export interface CodeSuggestion {
     range: vscode.Range;
@@ -21,10 +23,13 @@ export class RealtimeAnalyzer {
     private isEnabled = true;
     private profileManager: ProfileManager;
     private genesysService: GenesysService;
+    private rateLimiter: IntelligentRateLimiter;
+    private proactiveAnalyzer: ProactiveCodeAnalyzer;
     private userActions: Array<{ action: string; timestamp: Date; context?: any }> = [];
     private sessionStart: Date = new Date();
     private errorCount = 0;
     private completionCount = 0;
+    private previousContent: Map<string, string> = new Map();
 
     constructor(
         private llmService: LLMService,
@@ -33,6 +38,8 @@ export class RealtimeAnalyzer {
     ) {
         this.profileManager = profileManager;
         this.genesysService = new GenesysService();
+        this.rateLimiter = new IntelligentRateLimiter();
+        this.proactiveAnalyzer = new ProactiveCodeAnalyzer();
         this.diagnosticCollection = vscode.languages.createDiagnosticCollection('aiMentor');
         
         // Create decoration for inline hints
@@ -97,7 +104,7 @@ export class RealtimeAnalyzer {
 
         this.analysisTimeout = setTimeout(() => {
             this.analyzeDocument(document);
-        }, 1500); // Wait 1.5 seconds after user stops typing
+        }, 800); // Reduced to 800ms for more responsive proactive analysis
     }
 
     private async analyzeDocument(document: vscode.TextDocument) {
@@ -119,25 +126,80 @@ export class RealtimeAnalyzer {
         
         this.diagnosticCollection.set(document.uri, diagnostics);
         
-        // Skip if content hasn't changed significantly
-        if (this.isSimilarContent(content, this.lastAnalyzedContent)) {
+        // Create code change object for intelligent analysis
+        const previousContent = this.previousContent.get(document.uri.toString()) || '';
+        const codeChange: CodeChange = {
+            content,
+            previousContent,
+            fileName: document.fileName,
+            language: document.languageId,
+            changeType: this.getChangeType(content, previousContent),
+            linesChanged: this.countChangedLines(content, previousContent),
+            signature: this.generateSignature(content)
+        };
+        
+        // Store current content for next comparison
+        this.previousContent.set(document.uri.toString(), content);
+        
+        // Check if we should trigger AI analysis using intelligent rate limiting
+        const activeProfile = this.profileManager.getActiveProfile();
+        const rateLimitDecision = await this.rateLimiter.shouldTriggerAI(codeChange, activeProfile?.id);
+        
+        console.log(`Rate limit decision: ${rateLimitDecision.reason} (Priority: ${rateLimitDecision.priority})`);
+        
+        if (rateLimitDecision.useCache) {
+            const cachedAnalysis = this.rateLimiter.getCachedAnalysis(codeChange, activeProfile?.id);
+            if (cachedAnalysis) {
+                console.log('Using cached analysis result');
+                this.applyCachedSuggestions(document, cachedAnalysis.result);
+                return;
+            }
+        }
+        
+        if (!rateLimitDecision.shouldTrigger) {
+            // Queue for later processing if not immediate
+            if (rateLimitDecision.priority !== 'immediate') {
+                const request: AnalysisRequest = {
+                    change: codeChange,
+                    priority: rateLimitDecision.priority,
+                    timestamp: Date.now(),
+                    mentorId: activeProfile?.id
+                };
+                this.rateLimiter.enqueueAnalysis(request);
+                console.log(`Queued analysis request with ${rateLimitDecision.priority} priority`);
+            }
             return;
         }
 
-        this.lastAnalyzedContent = content;
-
         try {
-            const suggestions = await this.getCodeSuggestions(content, document.languageId);
-            this.applyDiagnostics(document, suggestions);
-            this.showInlineHints(document, suggestions);
+            // Run proactive analysis first for immediate feedback
+            const proactiveAnalysis = await this.proactiveAnalyzer.analyzeCodeProactively(content, document.languageId);
+            
+            // Convert proactive issues to code suggestions
+            const proactiveSuggestions = this.convertProactiveIssuesToSuggestions(proactiveAnalysis.issues);
+            
+            // Get AI-powered suggestions if rate limiting allows
+            const aiSuggestions = await this.getCodeSuggestions(content, document.languageId);
+            
+            // Combine both types of suggestions
+            const allSuggestions = [...proactiveSuggestions, ...aiSuggestions];
+            
+            // Cache the analysis result
+            this.rateLimiter.setCachedAnalysis(codeChange, allSuggestions, activeProfile?.id);
+            
+            this.applyDiagnostics(document, allSuggestions);
+            this.showInlineHints(document, allSuggestions);
+            
+            // Send proactive analysis to side panel
+            this.sendProactiveAnalysisToUI(proactiveAnalysis, document);
             
             // Voice narration for critical issues
-            const criticalIssues = suggestions.filter(s => 
-                s.severity === vscode.DiagnosticSeverity.Error && s.type === 'bug'
+            const criticalIssues = allSuggestions.filter(s => 
+                s.severity === vscode.DiagnosticSeverity.Error && (s.type === 'bug' || s.type === 'security')
             );
             
             if (criticalIssues.length > 0 && this.voiceService.isVoiceEnabled()) {
-                const message = `I found ${criticalIssues.length} potential bug${criticalIssues.length > 1 ? 's' : ''} in your code.`;
+                const message = `I found ${criticalIssues.length} critical issue${criticalIssues.length > 1 ? 's' : ''} in your code.`;
                 await this.voiceService.narrateCodeFlow(message, 'warning');
             }
 
@@ -858,6 +920,173 @@ export class RealtimeAnalyzer {
                 ));
             }
         });
+    }
+
+    // Helper methods for intelligent rate limiting
+    private getChangeType(content: string, previousContent: string): 'addition' | 'deletion' | 'modification' {
+        if (!previousContent) return 'addition';
+        if (content.length > previousContent.length) return 'addition';
+        if (content.length < previousContent.length) return 'deletion';
+        return 'modification';
+    }
+
+    private countChangedLines(content: string, previousContent: string): number {
+        const currentLines = content.split('\n');
+        const previousLines = previousContent.split('\n');
+        
+        let changedLines = 0;
+        const maxLines = Math.max(currentLines.length, previousLines.length);
+        
+        for (let i = 0; i < maxLines; i++) {
+            const currentLine = currentLines[i] || '';
+            const previousLine = previousLines[i] || '';
+            if (currentLine !== previousLine) {
+                changedLines++;
+            }
+        }
+        
+        return changedLines;
+    }
+
+    private generateSignature(content: string): string {
+        // Simple hash for content similarity
+        let hash = 0;
+        for (let i = 0; i < content.length; i++) {
+            const char = content.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32-bit integer
+        }
+        return Math.abs(hash).toString(36);
+    }
+
+    private applyCachedSuggestions(document: vscode.TextDocument, suggestions: CodeSuggestion[]): void {
+        this.applyDiagnostics(document, suggestions);
+        this.showInlineHints(document, suggestions);
+        console.log('Applied cached suggestions to document');
+    }
+
+    private convertProactiveIssuesToSuggestions(issues: ProactiveIssue[]): CodeSuggestion[] {
+        return issues.map(issue => ({
+            range: new vscode.Range(
+                Math.max(0, issue.line - 1), issue.column,
+                Math.max(0, issue.line - 1), issue.column + issue.codePattern.length
+            ),
+            message: `${issue.message} (Confidence: ${Math.round(issue.confidence * 100)}%)`,
+            severity: this.mapProactiveSeverity(issue.severity),
+            type: this.mapProactiveType(issue.type),
+            quickFix: issue.quickFix || issue.suggestion
+        }));
+    }
+
+    private mapProactiveSeverity(severity: 'critical' | 'high' | 'medium' | 'low'): vscode.DiagnosticSeverity {
+        switch (severity) {
+            case 'critical': return vscode.DiagnosticSeverity.Error;
+            case 'high': return vscode.DiagnosticSeverity.Error;
+            case 'medium': return vscode.DiagnosticSeverity.Warning;
+            case 'low': return vscode.DiagnosticSeverity.Information;
+            default: return vscode.DiagnosticSeverity.Hint;
+        }
+    }
+
+    private mapProactiveType(type: 'bug_risk' | 'performance' | 'security' | 'maintainability' | 'logic_error'): 'bug' | 'optimization' | 'style' | 'security' | 'best-practice' {
+        switch (type) {
+            case 'bug_risk': return 'bug';
+            case 'logic_error': return 'bug';
+            case 'performance': return 'optimization';
+            case 'security': return 'security';
+            case 'maintainability': return 'best-practice';
+            default: return 'best-practice';
+        }
+    }
+
+    private async sendProactiveAnalysisToUI(proactiveAnalysis: any, document: vscode.TextDocument): Promise<void> {
+        const activeProfile = this.profileManager.getActiveProfile();
+        if (!activeProfile) return;
+
+        // Create a comprehensive analysis message for the mentor
+        const criticalIssues = proactiveAnalysis.issues.filter((i: ProactiveIssue) => i.severity === 'critical');
+        const highIssues = proactiveAnalysis.issues.filter((i: ProactiveIssue) => i.severity === 'high');
+        const securityIssues = proactiveAnalysis.issues.filter((i: ProactiveIssue) => i.type === 'security');
+        
+        let analysisMessage = '';
+        
+        if (criticalIssues.length > 0) {
+            analysisMessage += `🚨 **Critical Issues Found:** ${criticalIssues.length}\n`;
+            criticalIssues.slice(0, 3).forEach((issue: ProactiveIssue) => {
+                analysisMessage += `- Line ${issue.line}: ${issue.message}\n`;
+            });
+        }
+        
+        if (securityIssues.length > 0) {
+            analysisMessage += `🔒 **Security Concerns:** ${securityIssues.length}\n`;
+            securityIssues.slice(0, 2).forEach((issue: ProactiveIssue) => {
+                analysisMessage += `- Line ${issue.line}: ${issue.message}\n`;
+            });
+        }
+        
+        if (proactiveAnalysis.complexity > 10) {
+            analysisMessage += `🧠 **Code Complexity:** ${proactiveAnalysis.complexity} (Consider refactoring)\n`;
+        }
+        
+        // Generate code flow diagram
+        const flowDiagram = this.generateCodeFlowDiagram(proactiveAnalysis.codeFlow);
+        if (flowDiagram) {
+            analysisMessage += `\n📊 **Code Flow:**\n\`\`\`mermaid\n${flowDiagram}\n\`\`\`\n`;
+        }
+        
+        // Send to LLM service for mentor-personalized response
+        if (analysisMessage.trim()) {
+            try {
+                await this.llmService.sendMessage({
+                    type: 'code_changed',
+                    code: document.getText(),
+                    language: document.languageId,
+                    analysis: {
+                        issues: proactiveAnalysis.issues.length,
+                        complexity: proactiveAnalysis.complexity,
+                        summary: analysisMessage
+                    }
+                });
+            } catch (error) {
+                console.error('Failed to send proactive analysis to UI:', error);
+            }
+        }
+    }
+
+    private generateCodeFlowDiagram(codeFlow: any[]): string {
+        if (!codeFlow || codeFlow.length === 0) return '';
+        
+        let diagram = 'graph TD\n';
+        
+        codeFlow.forEach((node, index) => {
+            const nodeId = `${node.type}_${index}`;
+            const label = `${node.name} (Line ${node.line})`;
+            
+            switch (node.type) {
+                case 'function':
+                    diagram += `    ${nodeId}["🔧 ${label}"]\n`;
+                    break;
+                case 'condition':
+                    diagram += `    ${nodeId}{"❓ ${label}"}\n`;
+                    break;
+                case 'loop':
+                    diagram += `    ${nodeId}(("🔄 ${label}"))\n`;
+                    break;
+                case 'call':
+                    diagram += `    ${nodeId}["📞 ${label}"]\n`;
+                    break;
+                default:
+                    diagram += `    ${nodeId}["${label}"]\n`;
+            }
+            
+            // Add connections based on line proximity
+            if (index > 0) {
+                const prevNodeId = `${codeFlow[index - 1].type}_${index - 1}`;
+                diagram += `    ${prevNodeId} --> ${nodeId}\n`;
+            }
+        });
+        
+        return diagram;
     }
 
     private getMentorStyledMessage(originalMessage: string, activeProfile: any): string {

@@ -322,84 +322,120 @@ export class MentorHoverProvider implements vscode.HoverProvider {
         profile: MentorProfile
     ): string[] {
         const suggestions: string[] = [];
-        const mentorId = profile.id;
+        const personality = profile.personality;
+        const communicationStyle = personality.communicationStyle;
+        const expertise = personality.expertise;
+        const focusAreas = personality.focusAreas;
         
         // Function architecture suggestions
         if (word === 'function' || lineText.includes('function') || lineText.includes('=>')) {
-            switch (mentorId) {
-                case 'marcus':
-                    suggestions.push("**🏗️ Architecture:** This function better have a single responsibility. If it's doing more than one thing, split it up. No one wants to debug a 200-line monster function.");
-                    break;
-                case 'sophia':
-                    suggestions.push("**🏗️ Architecture:** Oh look, another function! *adjusts glasses* Make sure it's not trying to be the Swiss Army knife of your codebase. Single responsibility principle is your friend here.");
-                    break;
-                case 'alex':
-                    suggestions.push("**🏗️ Architecture:** WOW! A function! 🎉 This is AMAZING! Make sure it has one clear job - functions are like superheroes, they're best when they have one superpower! ✨");
-                    break;
-            }
+            const suggestion = this.generateArchitectureSuggestion(
+                'function',
+                profile,
+                "Functions should follow the single responsibility principle",
+                {
+                    direct: "This function better have a single responsibility. Break it up if it's doing multiple things.",
+                    supportive: "Let's make sure this function has one clear job - it'll be easier to test and maintain!",
+                    detailed: "Consider the single responsibility principle here. Functions that do one thing well are easier to debug, test, and reuse.",
+                    concise: "Single responsibility principle - one function, one job."
+                }
+            );
+            if (suggestion) suggestions.push(suggestion);
         }
 
         // Class architecture suggestions
         if (word === 'class' || lineText.includes('class ')) {
-            switch (mentorId) {
-                case 'marcus':
-                    suggestions.push("**🏗️ Architecture:** Classes should be cohesive and loosely coupled. If this class knows too much about other classes, you're building a house of cards.");
-                    break;
-                case 'sophia':
-                    suggestions.push("**🏗️ Architecture:** A class! How object-oriented of you. Remember: high cohesion, low coupling. It's like a good relationship - independent but working together.");
-                    break;
-                case 'alex':
-                    suggestions.push("**🏗️ Architecture:** CLASSES are SO COOL! 🌟 They're like blueprints for awesome objects! Make sure each class has a clear purpose - like a specialized team member! 🚀");
-                    break;
-            }
+            const suggestion = this.generateArchitectureSuggestion(
+                'class',
+                profile,
+                "Classes should be cohesive and loosely coupled",
+                {
+                    direct: "Classes should be cohesive and loosely coupled. Don't create dependencies you don't need.",
+                    supportive: "Great class structure! Remember: high cohesion, low coupling works like a good team.",
+                    detailed: "This class should follow object-oriented principles: high cohesion within the class, loose coupling with other classes.",
+                    concise: "High cohesion, low coupling."
+                }
+            );
+            if (suggestion) suggestions.push(suggestion);
         }
 
         // Import/module architecture
         if (word === 'import' || word === 'require' || lineText.includes('import') || lineText.includes('require')) {
-            switch (mentorId) {
-                case 'marcus':
-                    suggestions.push("**🏗️ Architecture:** Keep your imports organized and minimal. Circular dependencies are the devil. If you have them, fix your architecture.");
-                    break;
-                case 'sophia':
-                    suggestions.push("**🏗️ Architecture:** Importing things, I see. Just remember - dependency injection is cleaner than tight coupling. Your future self will thank you.");
-                    break;
-                case 'alex':
-                    suggestions.push("**🏗️ Architecture:** IMPORTS! 📦 You're building with modules - that's FANTASTIC! Keep them organized and avoid circular dependencies - it's like avoiding tangled Christmas lights! ✨");
-                    break;
-            }
+            const suggestion = this.generateArchitectureSuggestion(
+                'imports',
+                profile,
+                "Keep imports organized and avoid circular dependencies",
+                {
+                    direct: "Keep imports organized and minimal. Circular dependencies will cause problems.",
+                    supportive: "Nice modular approach! Just watch out for circular dependencies - they're tricky to debug.",
+                    detailed: "Import organization is crucial for maintainability. Consider dependency injection patterns and avoid circular references.",
+                    concise: "Organize imports, avoid circular deps."
+                }
+            );
+            if (suggestion) suggestions.push(suggestion);
         }
 
         // Async architecture
         if (word === 'async' || word === 'await' || lineText.includes('Promise')) {
-            switch (mentorId) {
-                case 'marcus':
-                    suggestions.push("**🏗️ Architecture:** Async code better have proper error handling. Unhandled promise rejections will crash your app faster than you can say 'callback hell'.");
-                    break;
-                case 'sophia':
-                    suggestions.push("**🏗️ Architecture:** Ah, async operations. How modern! Just don't forget error boundaries and proper promise chaining. Nobody likes mysterious crashes.");
-                    break;
-                case 'alex':
-                    suggestions.push("**🏗️ Architecture:** ASYNC CODE! 🚀 You're handling time like a time wizard! Remember to catch those errors - every promise needs a safety net! ⚡");
-                    break;
-            }
+            const suggestion = this.generateArchitectureSuggestion(
+                'async',
+                profile,
+                "Async code needs proper error handling",
+                {
+                    direct: "Async code needs proper error handling. Unhandled rejections will crash your app.",
+                    supportive: "Async operations are powerful! Don't forget error boundaries and proper promise chaining.",
+                    detailed: "Asynchronous code requires careful error handling. Consider try-catch blocks, promise chains, and error boundaries.",
+                    concise: "Handle async errors properly."
+                }
+            );
+            if (suggestion) suggestions.push(suggestion);
         }
 
         // Database/API architecture
         if (context.includes('fetch') || context.includes('axios') || context.includes('api') || context.includes('database')) {
-            switch (mentorId) {
-                case 'marcus':
-                    suggestions.push("**🏗️ Architecture:** API calls need retry logic, timeouts, and proper error handling. Don't assume the network is reliable - it's not.");
-                    break;
-                case 'sophia':
-                    suggestions.push("**🏗️ Architecture:** Making external calls? How brave! Consider implementing the repository pattern - it's like having a translator between your app and the outside world.");
-                    break;
-                case 'alex':
-                    suggestions.push("**🏗️ Architecture:** API interactions! 🌐 You're connecting to the world! Consider using the adapter pattern - it's like having a universal translator! SO COOL! ✨");
-                    break;
-            }
+            const suggestion = this.generateArchitectureSuggestion(
+                'api',
+                profile,
+                "External calls need retry logic and error handling",
+                {
+                    direct: "API calls need retry logic, timeouts, and proper error handling. Networks aren't reliable.",
+                    supportive: "External integrations! Consider the repository pattern - it's like having a translator for your app.",
+                    detailed: "External API interactions should implement retry logic, timeout handling, and the repository pattern for clean separation.",
+                    concise: "Add retry logic and timeouts."
+                }
+            );
+            if (suggestion) suggestions.push(suggestion);
         }
 
         return suggestions;
+    }
+
+    private generateArchitectureSuggestion(
+        type: string,
+        profile: MentorProfile,
+        baseConcept: string,
+        styleVariations: Record<string, string>
+    ): string | null {
+        const personality = profile.personality;
+        const communicationStyle = personality.communicationStyle;
+        const expertise = personality.expertise;
+        
+        // Get base message based on communication style
+        const baseMessage = styleVariations[communicationStyle] || styleVariations.detailed;
+        
+        // Add expertise-specific insights
+        let expertiseInsight = '';
+        if (type === 'function' && expertise.includes('performance')) {
+            expertiseInsight = ' Consider performance implications of function size and complexity.';
+        } else if (type === 'class' && expertise.includes('design-patterns')) {
+            expertiseInsight = ' Apply SOLID principles for better design.';
+        } else if (type === 'async' && expertise.includes('node.js')) {
+            expertiseInsight = ' In Node.js, unhandled promise rejections can crash the process.';
+        } else if (type === 'api' && expertise.includes('microservices')) {
+            expertiseInsight = ' Consider circuit breaker patterns for resilient service communication.';
+        }
+        
+        return `**🏗️ ${profile.name} (Architecture):** ${baseMessage}${expertiseInsight}`;
     }
 
     private getCodeStylingSuggestions(
@@ -410,22 +446,23 @@ export class MentorHoverProvider implements vscode.HoverProvider {
         profile: MentorProfile
     ): string[] {
         const suggestions: string[] = [];
-        const mentorId = profile.id;
         const stylePrefs = profile.codeStylePreferences;
+        const personality = profile.personality;
         
         // Variable naming suggestions
         if (word.match(/^[a-z][a-zA-Z0-9]*$/) && lineText.includes('=')) {
-            switch (mentorId) {
-                case 'marcus':
-                    suggestions.push(`**🎨 Style:** Variable names should be descriptive, not cryptic. If I can't understand what '${word}' does from its name, neither can you in 6 months.`);
-                    break;
-                case 'sophia':
-                    suggestions.push(`**🎨 Style:** '${word}' - interesting choice. Remember, code is read more than it's written. Make it readable, not like ancient hieroglyphs.`);
-                    break;
-                case 'alex':
-                    suggestions.push(`**🎨 Style:** '${word}' is a GREAT variable name! 🌟 Clear naming makes code so much more readable - like putting labels on everything! ✨`);
-                    break;
-            }
+            const suggestion = this.generateStyleSuggestion(
+                'naming',
+                profile,
+                `Variable '${word}' naming`,
+                {
+                    direct: `Variable names should be descriptive, not cryptic. Make '${word}' more meaningful.`,
+                    supportive: `'${word}' is a good start! Consider if the name clearly describes what it contains.`,
+                    detailed: `Variable naming is crucial for maintainability. '${word}' should clearly indicate its purpose and content type.`,
+                    concise: `Make '${word}' more descriptive.`
+                }
+            );
+            if (suggestion) suggestions.push(suggestion);
         }
 
         // Indentation style check
@@ -435,17 +472,18 @@ export class MentorHoverProvider implements vscode.HoverProvider {
             const hasTabs = leadingWhitespace.includes('\t');
             
             if ((stylePrefs.indentStyle === 'spaces' && hasTabs) || (stylePrefs.indentStyle === 'tabs' && hasSpaces)) {
-                switch (mentorId) {
-                    case 'marcus':
-                        suggestions.push(`**🎨 Style:** Mixed tabs and spaces? What is this, amateur hour? Pick ${stylePrefs.indentStyle} and stick with it.`);
-                        break;
-                    case 'sophia':
-                        suggestions.push(`**🎨 Style:** Oh, the classic tabs vs spaces debate! Your profile prefers ${stylePrefs.indentStyle}. Consistency is key, darling.`);
-                        break;
-                    case 'alex':
-                        suggestions.push(`**🎨 Style:** Indentation is SO important! 📏 Your profile loves ${stylePrefs.indentStyle} - consistent formatting makes code BEAUTIFUL! ✨`);
-                        break;
-                }
+                const suggestion = this.generateStyleSuggestion(
+                    'indentation',
+                    profile,
+                    `Indentation consistency`,
+                    {
+                        direct: `Mixed tabs and spaces detected. Your profile requires ${stylePrefs.indentStyle} - stick with it.`,
+                        supportive: `Indentation consistency helps! Your profile prefers ${stylePrefs.indentStyle} - let's keep it uniform.`,
+                        detailed: `Consistent indentation improves readability. Your profile is configured for ${stylePrefs.indentStyle} - maintain this throughout.`,
+                        concise: `Use ${stylePrefs.indentStyle} consistently.`
+                    }
+                );
+                if (suggestion) suggestions.push(suggestion);
             }
         }
 
@@ -456,17 +494,18 @@ export class MentorHoverProvider implements vscode.HoverProvider {
             
             if ((stylePrefs.preferredQuotes === 'single' && hasDoubleQuotes) || 
                 (stylePrefs.preferredQuotes === 'double' && hasSingleQuotes)) {
-                switch (mentorId) {
-                    case 'marcus':
-                        suggestions.push(`**🎨 Style:** Your profile prefers ${stylePrefs.preferredQuotes} quotes. Pick a style and stick with it - consistency matters.`);
-                        break;
-                    case 'sophia':
-                        suggestions.push(`**🎨 Style:** Quote consistency, please! Your profile likes ${stylePrefs.preferredQuotes} quotes. It's like choosing an outfit - match your accessories.`);
-                        break;
-                    case 'alex':
-                        suggestions.push(`**🎨 Style:** Quote styles! 📝 Your profile LOVES ${stylePrefs.preferredQuotes} quotes - consistent styling makes code look AMAZING! ✨`);
-                        break;
-                }
+                const suggestion = this.generateStyleSuggestion(
+                    'quotes',
+                    profile,
+                    `Quote style consistency`,
+                    {
+                        direct: `Your profile prefers ${stylePrefs.preferredQuotes} quotes. Be consistent.`,
+                        supportive: `Quote consistency looks great! Your profile likes ${stylePrefs.preferredQuotes} quotes.`,
+                        detailed: `Consistent quote usage improves code readability. Your profile is configured for ${stylePrefs.preferredQuotes} quotes.`,
+                        concise: `Use ${stylePrefs.preferredQuotes} quotes.`
+                    }
+                );
+                if (suggestion) suggestions.push(suggestion);
             }
         }
 
@@ -477,36 +516,63 @@ export class MentorHoverProvider implements vscode.HoverProvider {
                 (lineText.includes('=') || lineText.includes('return') || lineText.includes('const') || lineText.includes('let'));
             
             if (shouldHaveSemicolon && !hasSemicolon) {
-                switch (mentorId) {
-                    case 'marcus':
-                        suggestions.push("**🎨 Style:** Missing semicolon. Your profile requires them. Don't rely on ASI - be explicit.");
-                        break;
-                    case 'sophia':
-                        suggestions.push("**🎨 Style:** Where's your semicolon? Your profile expects them. It's like forgetting to dot your i's and cross your t's.");
-                        break;
-                    case 'alex':
-                        suggestions.push("**🎨 Style:** Semicolons are AWESOME! 🎯 Your profile loves them - they make statements complete and clear! ✨");
-                        break;
-                }
+                const suggestion = this.generateStyleSuggestion(
+                    'semicolons',
+                    profile,
+                    `Semicolon requirement`,
+                    {
+                        direct: `Missing semicolon. Your profile requires them - don't rely on ASI.`,
+                        supportive: `Your profile expects semicolons - they help make statements clear and explicit!`,
+                        detailed: `Your profile is configured to require semicolons. This improves code clarity and prevents ASI-related issues.`,
+                        concise: `Add semicolon.`
+                    }
+                );
+                if (suggestion) suggestions.push(suggestion);
             }
         }
 
         // Line length suggestions
         if (lineText.length > stylePrefs.maxLineLength) {
-            switch (mentorId) {
-                case 'marcus':
-                    suggestions.push(`**🎨 Style:** This line is ${lineText.length} characters. Your profile limit is ${stylePrefs.maxLineLength}. Break it up - nobody likes horizontal scrolling.`);
-                    break;
-                case 'sophia':
-                    suggestions.push(`**🎨 Style:** This line is getting a bit long, don't you think? ${lineText.length} chars vs your ${stylePrefs.maxLineLength} limit. Time for some line breaks!`);
-                    break;
-                case 'alex':
-                    suggestions.push(`**🎨 Style:** This line is REALLY long! 📏 ${lineText.length} characters! Your profile prefers ${stylePrefs.maxLineLength} max - shorter lines are easier to read! ✨`);
-                    break;
-            }
+            const suggestion = this.generateStyleSuggestion(
+                'line-length',
+                profile,
+                `Line length limit`,
+                {
+                    direct: `Line too long: ${lineText.length}/${stylePrefs.maxLineLength} chars. Break it up.`,
+                    supportive: `This line is getting long (${lineText.length} chars). Your ${stylePrefs.maxLineLength} limit helps readability!`,
+                    detailed: `Line length of ${lineText.length} characters exceeds your configured limit of ${stylePrefs.maxLineLength}. Consider breaking into multiple lines.`,
+                    concise: `Break long line (${lineText.length}/${stylePrefs.maxLineLength}).`
+                }
+            );
+            if (suggestion) suggestions.push(suggestion);
         }
 
         return suggestions;
+    }
+
+    private generateStyleSuggestion(
+        type: string,
+        profile: MentorProfile,
+        category: string,
+        styleVariations: Record<string, string>
+    ): string | null {
+        const personality = profile.personality;
+        const communicationStyle = personality.communicationStyle;
+        
+        // Get base message based on communication style
+        const baseMessage = styleVariations[communicationStyle] || styleVariations.detailed;
+        
+        // Add expertise-specific context
+        let expertiseContext = '';
+        if (type === 'naming' && personality.expertise.includes('clean-code')) {
+            expertiseContext = ' Clean code principles emphasize self-documenting names.';
+        } else if (type === 'indentation' && personality.expertise.includes('team-collaboration')) {
+            expertiseContext = ' Consistent formatting is crucial for team collaboration.';
+        } else if (type === 'line-length' && personality.expertise.includes('readability')) {
+            expertiseContext = ' Shorter lines improve code review and debugging.';
+        }
+        
+        return `**🎨 ${profile.name} (Style):** ${baseMessage}${expertiseContext}`;
     }
 
     // Code element detection methods
