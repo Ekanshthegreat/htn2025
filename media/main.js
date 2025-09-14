@@ -67,17 +67,38 @@
         updateStatus('Analyzing your code with AI...');
     });
 
+    // Voice chat button integration
+    const voiceChatBtn = document.getElementById('voiceChatBtn');
+    if (voiceChatBtn) {
+        voiceChatBtn.addEventListener('click', () => {
+            console.log('Voice chat button clicked');
+            vscode.postMessage({ type: 'startVoiceChat' });
+            updateStatus('Starting voice chat with mentor...');
+        });
+    }
+
     // Enhanced mentor dropdown selection
     mentorSelect.addEventListener('change', (e) => {
         const mentorId = e.target.value;
         if (mentorId && mentorId !== currentMentor.id && availableProfiles.length > 0) {
             const selectedProfile = availableProfiles.find(p => p.id === mentorId);
             if (selectedProfile) {
+                // Clear messages when switching mentors
+                clearMessages();
+                
+                // Update current mentor info
                 currentMentor.id = selectedProfile.id;
                 currentMentor.name = selectedProfile.name;
                 currentMentor.avatar = selectedProfile.avatar || '🤖';
                 currentMentor.personality = selectedProfile.personality;
                 
+                // Update avatar immediately
+                updateMentorAvatar(selectedProfile);
+                
+                // Update mentor name
+                updateMentorName(selectedProfile.name);
+                
+                // Send profile switch message to backend
                 vscode.postMessage({ 
                     type: 'switchProfile', 
                     profileId: mentorId 
@@ -618,17 +639,23 @@
                 currentMentor.avatar = activeProfile.avatar || 'https://avatars.githubusercontent.com/u/60302907?v=4';
                 currentMentor.personality = activeProfile.personality;
                 
-                if (mentorAvatar && activeProfile) {
-                    const avatarUrl = activeProfile.githubUsername 
-                        ? `https://avatars.githubusercontent.com/${activeProfile.githubUsername}?v=4`
-                        : activeProfile.avatar || 'https://avatars.githubusercontent.com/u/60302907?v=4';
-                    mentorAvatar.src = avatarUrl;
-                    mentorAvatar.alt = `${activeProfile.name} Avatar`;
-                }
+                updateMentorAvatar(activeProfile);
                 applyMentorTheme(activeProfile.personality);
             }
         }
         updateMentorName(activeMentorName || currentMentor.name);
+    }
+
+    function updateMentorAvatar(profile) {
+        const mentorAvatar = document.getElementById('mentorAvatar');
+        if (mentorAvatar && profile) {
+            const avatarUrl = profile.githubUsername 
+                ? `https://avatars.githubusercontent.com/${profile.githubUsername}?v=4`
+                : profile.avatar || 'https://avatars.githubusercontent.com/u/60302907?v=4';
+            mentorAvatar.src = avatarUrl;
+            mentorAvatar.alt = `${profile.name} Avatar`;
+            console.log('Updated mentor avatar to:', avatarUrl);
+        }
     }
 
     function updateMentorName(mentorName) {
