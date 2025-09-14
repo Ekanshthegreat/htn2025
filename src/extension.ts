@@ -29,11 +29,11 @@ export function activate(context: vscode.ExtensionContext) {
     console.log('🚀 AI Debugger Mentor is now active!');
 
     // Initialize services
-    llmService = new LLMService();
+    profileManager = new ProfileManager(context);
+    llmService = new LLMService(profileManager);
     astAnalyzer = new ASTAnalyzer();
     voiceService = new VoiceService();
     graphiteService = new GraphiteService();
-    profileManager = new ProfileManager(context);
     githubService = new GitHubService();
     genesysService = new GenesysService();
     hoverProvider = new MentorHoverProvider(profileManager, astAnalyzer);

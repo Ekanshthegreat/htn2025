@@ -284,6 +284,9 @@ export class LLMService {
                         case 'trace_execution':
                             basePrompt = activeProfile.prompts.explanationPrompt;
                             break;
+                        case 'code_analysis':
+                            basePrompt = activeProfile.prompts.reviewPrompt; // Use review prompt for code analysis
+                            break;
                         default:
                             basePrompt = activeProfile.prompts.systemPrompt;
                     }
