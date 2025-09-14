@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { ASTAnalyzer } from './astAnalyzer';
 import { LLMService } from './llmService';
 import * as diff from 'diff';
+import { ProfileManager } from './profileManager';
+import { interactionTracker } from './interactionTracker';
 
 export class CodeWatcher {
     private fileWatcher: vscode.FileSystemWatcher | undefined;
@@ -13,7 +15,8 @@ export class CodeWatcher {
 
     constructor(
         private astAnalyzer: ASTAnalyzer,
-        private llmService: LLMService
+        private llmService: LLMService,
+        private profileManager?: ProfileManager
     ) {}
 
     setAIMentorProvider(provider: any) {
@@ -158,6 +161,23 @@ export class CodeWatcher {
         if (response && this.aiMentorProvider) {
             this.aiMentorProvider.addMessage(response);
         }
+
+        // Log code change event for summaries (aggregate added/removed lines)
+        try {
+            let addedLines = 0;
+            let removedLines = 0;
+            for (const c of changes) {
+                const lineCount = (c.value.match(/\n/g) || []).length + (c.value.endsWith('\n') ? 0 : 1);
+                if (c.added) addedLines += lineCount;
+                if (c.removed) removedLines += lineCount;
+            }
+            const activeProfile = this.profileManager?.getActiveProfile();
+            interactionTracker.logCodeChange(activeProfile?.id, {
+                fileName: document.fileName,
+                addedLines,
+                removedLines
+            });
+        } catch {}
     }
 
     private getContextAroundPosition(document: vscode.TextDocument, position: vscode.Position): string {

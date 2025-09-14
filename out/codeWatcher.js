@@ -26,10 +26,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CodeWatcher = void 0;
 const vscode = __importStar(require("vscode"));
 const diff = __importStar(require("diff"));
+const interactionTracker_1 = require("./interactionTracker");
 class CodeWatcher {
-    constructor(astAnalyzer, llmService) {
+    constructor(astAnalyzer, llmService, profileManager) {
         this.astAnalyzer = astAnalyzer;
         this.llmService = llmService;
+        this.profileManager = profileManager;
         this.isActive = false;
         this.previousContent = new Map();
         this.debounceDelay = 1000; // 1 second
@@ -153,6 +155,25 @@ class CodeWatcher {
         if (response && this.aiMentorProvider) {
             this.aiMentorProvider.addMessage(response);
         }
+        // Log code change event for summaries (aggregate added/removed lines)
+        try {
+            let addedLines = 0;
+            let removedLines = 0;
+            for (const c of changes) {
+                const lineCount = (c.value.match(/\n/g) || []).length + (c.value.endsWith('\n') ? 0 : 1);
+                if (c.added)
+                    addedLines += lineCount;
+                if (c.removed)
+                    removedLines += lineCount;
+            }
+            const activeProfile = this.profileManager?.getActiveProfile();
+            interactionTracker_1.interactionTracker.logCodeChange(activeProfile?.id, {
+                fileName: document.fileName,
+                addedLines,
+                removedLines
+            });
+        }
+        catch { }
     }
     getContextAroundPosition(document, position) {
         const startLine = Math.max(0, position.line - 5);

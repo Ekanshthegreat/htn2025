@@ -36,6 +36,8 @@ const profileManager_1 = require("./profileManager");
 const githubService_1 = require("./githubService");
 const genesysService_1 = require("./genesysService");
 const hoverProvider_1 = require("./hoverProvider");
+const notificationService_1 = require("./notificationService");
+const interactionTracker_1 = require("./interactionTracker");
 let aiMentorProvider;
 let codeWatcher;
 let astAnalyzer;
@@ -58,7 +60,7 @@ function activate(context) {
     voiceService = new voiceService_1.VoiceService();
     graphiteService = new graphiteService_1.GraphiteService();
     realtimeAnalyzer = new realtimeAnalyzer_1.RealtimeAnalyzer(llmService, voiceService, profileManager);
-    codeWatcher = new codeWatcher_1.CodeWatcher(astAnalyzer, llmService);
+    codeWatcher = new codeWatcher_1.CodeWatcher(astAnalyzer, llmService, profileManager);
     aiMentorProvider = new aiMentorProvider_1.AIMentorProvider(context.extensionUri, codeWatcher, llmService, profileManager);
     hoverProvider = new hoverProvider_1.MentorHoverProvider(profileManager, astAnalyzer);
     // Connect codeWatcher to aiMentorProvider for UI updates
@@ -144,9 +146,13 @@ function activate(context) {
         });
         if (!githubUsername)
             return;
+        const email = await vscode.window.showInputBox({
+            prompt: 'Enter contact email for the mentor (optional)',
+            placeHolder: 'e.g., mentor@example.com'
+        });
         try {
             vscode.window.showInformationMessage(`🔍 Analyzing GitHub profile: ${githubUsername}...`);
-            const mentorProfile = await profileManager.createMentorFromGitHub(githubUsername);
+            const mentorProfile = await profileManager.createMentorFromGitHub(githubUsername, email || undefined);
             vscode.window.showInformationMessage(`✅ Created GitHub-based mentor: ${mentorProfile.name}!`, 'Switch to Mentor').then(choice => {
                 if (choice === 'Switch to Mentor') {
                     profileManager.setActiveProfile(mentorProfile.id);
@@ -232,6 +238,41 @@ function activate(context) {
             }
         }
     }
+    const sendSummaryCommand = vscode.commands.registerCommand('aiMentor.sendSummary', async () => {
+        const activeProfile = profileManager.getActiveProfile();
+        if (!activeProfile) {
+            vscode.window.showWarningMessage('No active mentor profile. Cannot send summary.');
+            return;
+        }
+        if (!activeProfile.contactEmail) {
+            vscode.window.showWarningMessage(`Mentor profile '${activeProfile.name}' does not have a contact email configured.`);
+            return;
+        }
+        const summary = interactionTracker_1.interactionTracker.generateSummary(activeProfile.id);
+        if (summary.includes('No interactions recorded')) {
+            vscode.window.showInformationMessage('No interactions to summarize for the current session.');
+            return;
+        }
+        vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: `Sending interaction summary to ${activeProfile.name}...`,
+            cancellable: false
+        }, async (progress) => {
+            const html = interactionTracker_1.interactionTracker.generateSummaryHtml(activeProfile.id, activeProfile.name);
+            const previewUrl = await notificationService_1.notificationService.sendSummaryRich(activeProfile.contactEmail, html, activeProfile.name);
+            if (previewUrl) {
+                vscode.window.showInformationMessage(`Summary sent! Preview it here: ${previewUrl}`, 'Open Preview').then(choice => {
+                    if (choice === 'Open Preview') {
+                        vscode.env.openExternal(vscode.Uri.parse(previewUrl));
+                    }
+                });
+                interactionTracker_1.interactionTracker.clearInteractionsForMentor(activeProfile.id);
+            }
+            else {
+                vscode.window.showErrorMessage('Failed to send summary email. Check the console for details.');
+            }
+        });
+    });
     async function handleProfileSwitch(profiles, activeProfile, profileManager, aiMentorProvider) {
         const switchItems = profiles.map(profile => ({
             label: profile.name,
@@ -249,7 +290,7 @@ function activate(context) {
             aiMentorProvider.updateWebview();
         }
     }
-    context.subscriptions.push(activateCommand, deactivateCommand, startDebuggingCommand, traceExecutionCommand, selectProfileCommand, createGitHubMentorCommand, manageProfilesCommand);
+    context.subscriptions.push(activateCommand, deactivateCommand, startDebuggingCommand, traceExecutionCommand, selectProfileCommand, createGitHubMentorCommand, manageProfilesCommand, sendSummaryCommand);
     // Add logging for profile manager initialization
     console.log('ProfileManager initialized with', profileManager.getAllProfiles().length, 'profiles');
     const startupActiveProfile = profileManager.getActiveProfile();

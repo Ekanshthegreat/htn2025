@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ProfileManager, MentorProfile } from './profileManager';
 import { ASTAnalyzer } from './astAnalyzer';
 import { MentorPersonalityService } from './mentorPersonality';
+import { interactionTracker } from './interactionTracker';
 
 interface CodeElementAnalysis {
     type: 'function' | 'class' | 'variable' | 'method' | 'unknown';
@@ -40,6 +41,10 @@ export class MentorHoverProvider implements vscode.HoverProvider {
         token: vscode.CancellationToken
     ): Promise<vscode.Hover | undefined> {
         const activeProfile = this.profileManager.getActiveProfile();
+        if (!activeProfile) {
+            return undefined; // No active mentor, no hover.
+        }
+
         const wordRange = document.getWordRangeAtPosition(position);
         const line = document.lineAt(position.line);
         const lineText = line.text;
@@ -68,15 +73,32 @@ export class MentorHoverProvider implements vscode.HoverProvider {
         // Show hover tooltip with suggestions directly
         const markdown = new vscode.MarkdownString();
         markdown.isTrusted = true;
-        
-        // Add mentor header
-        markdown.appendMarkdown(`**💡 ${activeProfile.name}** suggests:\n\n`);
+        markdown.supportHtml = true;
+
+        // Add mentor header with image avatar
+        let avatarMarkdown = '';
+        if (activeProfile.avatar && activeProfile.avatar.startsWith('http')) {
+            avatarMarkdown = `<img src="${activeProfile.avatar}" width="24" height="24" style="border-radius: 50%; vertical-align: middle;" alt="${activeProfile.name}'s avatar">`;
+        } else {
+            avatarMarkdown = activeProfile.avatar || '🤖';
+        }
+        markdown.appendMarkdown(`### ${avatarMarkdown} ${activeProfile.name}\n\n`);
         
         // Add suggestions to hover tooltip
         suggestions.forEach((suggestion, index) => {
             const cleanSuggestion = suggestion.replace(/\*\*/g, '').replace(/🔍|⚡|🧪|🏗️|🐧|⚛️|📦|🚀|🎨|🔥|🌟|✨|📏|📝|🎯/g, '').trim();
             markdown.appendMarkdown(`${index + 1}. ${cleanSuggestion}\n\n`);
         });
+
+        // Log hover interaction for summary emails
+        try {
+            interactionTracker.logHover(activeProfile.id, {
+                fileName: document.fileName,
+                position: { line: position.line, character: position.character },
+                word,
+                suggestions
+            });
+        } catch {}
 
         return new vscode.Hover(markdown, wordRange);
     }

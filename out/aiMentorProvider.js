@@ -25,6 +25,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AIMentorProvider = void 0;
 const vscode = __importStar(require("vscode"));
+const interactionTracker_1 = require("./interactionTracker");
 class AIMentorProvider {
     constructor(_extensionUri, codeWatcher, llmService, profileManager) {
         this._extensionUri = _extensionUri;
@@ -67,6 +68,15 @@ class AIMentorProvider {
         console.log('Current messages count:', this.messages.length);
         this.messages.push(response);
         console.log('Messages after push:', this.messages.length);
+        const activeProfile = this.profileManager?.getActiveProfile();
+        if (activeProfile) {
+            interactionTracker_1.interactionTracker.logInteraction({
+                mentorId: activeProfile.id,
+                timestamp: new Date(),
+                type: 'advice_provided',
+                data: response
+            });
+        }
         this.updateWebview();
     }
     updateWebview() {
@@ -123,6 +133,144 @@ class AIMentorProvider {
         this.messages = [];
         this.llmService.clearHistory();
         this.updateWebview();
+    }
+    async requestExplanation(code) {
+        const activeEditor = vscode.window.activeTextEditor;
+        if (!activeEditor) {
+            this.sendErrorToWebview('No active editor found');
+            return;
+        }
+        const activeProfile = this.profileManager?.getActiveProfile();
+        if (activeProfile) {
+            interactionTracker_1.interactionTracker.logInteraction({
+                mentorId: activeProfile.id,
+                timestamp: new Date(),
+                type: 'advice_request',
+                data: { code, language: activeEditor.document.languageId }
+            });
+        }
+        try {
+            // Send typing indicator to webview
+            this._view?.webview.postMessage({ type: 'mentorTyping' });
+            const response = await this.llmService.sendMessage({
+                type: 'start_debugging',
+                code: code,
+                language: activeEditor.document.languageId
+            });
+            if (response) {
+                this.addMessage(response);
+            }
+            else {
+                // Fallback response if LLM fails
+                const fallbackResponse = this.createFallbackResponse(code, activeEditor.document.languageId);
+                this.addMessage(fallbackResponse);
+            }
+        }
+        catch (error) {
+            console.error('Request explanation failed:', error);
+            const errorResponse = this.createErrorResponse(error);
+            this.addMessage(errorResponse);
+        }
+    }
+    createFallbackResponse(code, language) {
+        const activeProfile = this.profileManager?.getActiveProfile();
+        if (!activeProfile) {
+            return {
+                message: 'AI Mentor: No mentor profile available. Please create a GitHub-based mentor profile first.',
+                suggestions: ['Use the command palette to create a mentor from a GitHub profile'],
+                warnings: ['No active mentor profile found'],
+                type: 'warning'
+            };
+        }
+        const mentorName = activeProfile.name;
+        const communicationStyle = activeProfile.personality.communicationStyle;
+        const feedbackApproach = activeProfile.personality.feedbackApproach;
+        // Pattern-based analysis
+        let suggestions = [];
+        let warnings = [];
+        // Analyze code patterns
+        const hasConsoleLog = code.includes('console.log');
+        const hasVar = code.includes('var ');
+        const hasLooseEquality = code.includes('==') && !code.includes('===');
+        const hasArrowFunctions = code.includes('=>');
+        const hasAsync = code.includes('async') || code.includes('await');
+        const hasComments = code.includes('//') || code.includes('/*');
+        const lineCount = code.split('\n').length;
+        // Generate suggestions based on GitHub profile personality
+        if (hasConsoleLog) {
+            suggestions.push(this.formatSuggestionByStyle('Consider using a proper logging library for production code', communicationStyle, feedbackApproach));
+        }
+        if (hasVar) {
+            suggestions.push(this.formatSuggestionByStyle('Use let or const instead of var for better scoping', communicationStyle, feedbackApproach));
+        }
+        if (hasLooseEquality) {
+            warnings.push(this.formatSuggestionByStyle('Use strict equality (===) instead of loose equality (==)', communicationStyle, feedbackApproach));
+        }
+        if (hasArrowFunctions && feedbackApproach === 'encouraging') {
+            suggestions.push('Great use of arrow functions! Modern JavaScript practices.');
+        }
+        if (hasAsync && activeProfile.personality.expertise.includes('node.js')) {
+            suggestions.push('Good async/await usage. Consider error handling patterns.');
+        }
+        if (!hasComments && lineCount > 10) {
+            suggestions.push(this.formatSuggestionByStyle('Consider adding comments for better code documentation', communicationStyle, feedbackApproach));
+        }
+        // Ensure we always have at least one suggestion
+        if (suggestions.length === 0 && warnings.length === 0) {
+            suggestions.push(this.formatSuggestionByStyle('Your code looks clean! Keep up the good work.', communicationStyle, feedbackApproach));
+        }
+        const message = `${mentorName}: I've analyzed your ${language} code based on my GitHub profile analysis. Here's what I found:`;
+        return {
+            message,
+            suggestions,
+            warnings,
+            type: 'explanation'
+        };
+    }
+    createErrorResponse(error) {
+        const activeProfile = this.profileManager?.getActiveProfile();
+        const mentorName = activeProfile?.name || 'AI Mentor';
+        const communicationStyle = activeProfile?.personality?.communicationStyle || 'supportive';
+        let message = `${mentorName}: I'm having trouble analyzing your code right now.`;
+        let suggestions = [
+            'Check your API key in VS Code settings',
+            'Ensure you have internet connectivity',
+            'Try again in a moment'
+        ];
+        // Adjust message tone based on GitHub profile communication style
+        if (communicationStyle === 'direct') {
+            message = `${mentorName}: API error occurred. Check your configuration.`;
+        }
+        else if (communicationStyle === 'detailed') {
+            message = `${mentorName}: I encountered a technical issue while processing your request. This typically indicates a configuration or connectivity problem.`;
+            suggestions.push('Review the error details below for more information');
+        }
+        else if (communicationStyle === 'supportive') {
+            message = `${mentorName}: Don't worry, I'm having a small technical hiccup. Let's troubleshoot this together.`;
+        }
+        return {
+            message,
+            suggestions,
+            warnings: [`Error: ${error.message || 'Unknown error'}`],
+            type: 'warning'
+        };
+    }
+    formatSuggestionByStyle(baseSuggestion, communicationStyle, feedbackApproach) {
+        switch (communicationStyle) {
+            case 'direct':
+                return baseSuggestion;
+            case 'detailed':
+                return `${baseSuggestion} This will improve code maintainability and reduce potential issues.`;
+            case 'supportive':
+                if (feedbackApproach === 'encouraging') {
+                    return `Great progress! ${baseSuggestion} to make your code even better.`;
+                }
+                return `Consider this improvement: ${baseSuggestion}`;
+            case 'concise':
+                return baseSuggestion.split('.')[0]; // Take first sentence only
+            default:
+                return baseSuggestion;
+        }
     }
     sendErrorToWebview(message) {
         if (this._view) {

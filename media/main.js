@@ -370,8 +370,24 @@
                 availableProfiles.forEach(profile => {
                     const option = document.createElement('option');
                     option.value = profile.id;
-                    option.textContent = profile.name;
+                    
+                    // Enhanced option text with GitHub info
+                    let displayText = profile.name;
+                    if (profile.githubUsername) {
+                        displayText += ` (@${profile.githubUsername})`;
+                    }
+                    
+                    option.textContent = displayText;
                     option.selected = profile.id === activeProfileId;
+                    
+                    // Store avatar data for later use
+                    if (profile.githubUsername) {
+                        option.dataset.avatar = `https://github.com/${profile.githubUsername}.png?size=16`;
+                    } else {
+                        option.dataset.avatar = profile.avatar || '🤖';
+                    }
+                    option.dataset.githubUsername = profile.githubUsername || '';
+                    
                     mentorSelect.appendChild(option);
                 });
             }
@@ -399,7 +415,19 @@
     }
 
     function updateMentorName(mentorName) {
+        console.log('Updating mentor name to:', mentorName);
+        
+        // Always update the header to show the active mentor with profile photo
         const headerElement = document.querySelector('#mentorTitle');
+        if (headerElement) {
+            const activeProfile = availableProfiles.find(p => p.id === currentMentor.id);
+            if (activeProfile && activeProfile.githubUsername) {
+                const avatarUrl = `https://github.com/${activeProfile.githubUsername}.png?size=32`;
+                headerElement.innerHTML = `<img src="${avatarUrl}" class="mentor-avatar-img" alt="${mentorName}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';"> <span class="fallback-avatar" style="display:none;">🤖</span> ${mentorName || 'AI Mentor'}`;
+            } else {
+                headerElement.textContent = `🤖 ${mentorName || 'AI Mentor'}`;
+            }
+        }
         if (headerElement) headerElement.textContent = mentorName || 'AI Mentor';
         
         const welcomeMessage = document.querySelector('.welcome-message h3');
@@ -440,7 +468,67 @@
     }
 
     // Typing indicator functions
+    // Enhanced utility functions
+    function getMentorAvatar(mentorId) {
+        if (!mentorId) return '🤖';
+        
+        const profile = availableProfiles.find(p => p.id === mentorId);
+        if (profile && profile.githubUsername) {
+            return `https://github.com/${profile.githubUsername}.png?size=24`;
+        }
+        return profile ? (profile.avatar || '🤖') : '🤖';
+    }
+
+    function addUserMessage(code) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message user-message';
+        messageDiv.innerHTML = `
+            <div class="message-header">
+                <span class="message-icon">👤</span>
+                <span class="message-title">You</span>
+                <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
+            </div>
+            <div class="message-content">
+                <div class="code-snippet">
+                    <pre><code>${escapeHtml(code)}</code></pre>
+                </div>
+            </div>
+        `;
+        messagesContainer.appendChild(messageDiv);
+        smoothScrollToBottom();
+    }
+
+    function addSystemMessage(message) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message system-message';
+        messageDiv.innerHTML = `
+            <div class="message-content system-content">
+                <span class="system-icon">🔄</span>
+                ${escapeHtml(message)}
+            </div>
+        `;
+        messagesContainer.appendChild(messageDiv);
+        smoothScrollToBottom();
+    }
+
     function showTypingIndicator() {
+        hideTypingIndicator(); // Remove existing indicator
+        
+        typingIndicator = document.createElement('div');
+        typingIndicator.className = 'typing-indicator';
+        const activeProfile = availableProfiles.find(p => p.id === currentMentor.id);
+        let avatarHtml;
+        if (activeProfile && activeProfile.githubUsername) {
+            const avatarUrl = `https://github.com/${activeProfile.githubUsername}.png?size=24`;
+            avatarHtml = `<img src="${avatarUrl}" class="mentor-avatar-img typing-avatar" alt="${currentMentor.name}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';"><span class="fallback-avatar" style="display:none;">🤖</span>`;
+        } else {
+            avatarHtml = `<span class="mentor-avatar">${currentMentor.avatar || '🤖'}</span>`;
+        }
+        
+        typingIndicator.innerHTML = `
+            <div class="typing-content">
+                ${avatarHtml}
+                <span class="typing-text">${currentMentor.name} is thinking...</span>
         if (!typingIndicator) {
             typingIndicator = document.createElement('div');
             typingIndicator.className = 'typing-indicator';

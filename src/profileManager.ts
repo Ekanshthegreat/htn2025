@@ -48,6 +48,7 @@ export interface MentorProfile {
     id: string;
     name: string;
     githubUsername?: string;
+    contactEmail?: string;
     avatar?: string;
     personality: MentorPersonality;
     codeStylePreferences: CodingStylePreferences;
@@ -159,16 +160,17 @@ export class ProfileManager {
 
 
 
-    public async createMentorFromGitHub(githubUsername: string): Promise<MentorProfile> {
+    public async createMentorFromGitHub(githubUsername: string, email?: string): Promise<MentorProfile> {
         try {
             // Use GitHubService for all GitHub operations
-            const partialProfile = await this.githubService.createProfileFromGitHub(githubUsername);
+            const partialProfile = await this.githubService.createProfileFromGitHub(githubUsername, undefined, email);
             
             // Create complete mentor profile
             const mentorProfile: MentorProfile = {
                 id: `github_${githubUsername}`,
                 name: partialProfile.name || githubUsername,
                 githubUsername: partialProfile.githubUsername!,
+                contactEmail: partialProfile.contactEmail,
                 avatar: partialProfile.avatar,
                 personality: partialProfile.personality!,
                 codeStylePreferences: partialProfile.codeStylePreferences!,
