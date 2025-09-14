@@ -8,7 +8,7 @@ export interface MentorDiagnostic {
     range: vscode.Range;
     message: string;
     severity: vscode.DiagnosticSeverity;
-    type: 'infinite_loop' | 'missing_increment' | 'security' | 'performance' | 'style';
+    type: 'infinite_loop' | 'missing_increment' | 'security' | 'performance' | 'style' | 'null_pointer';
     mentorPersona: string;
     mentorAdvice: string;
 }
@@ -23,6 +23,53 @@ export class RealtimeAnalyzer {
         this.diagnosticCollection = vscode.languages.createDiagnosticCollection('realtimeAnalyzer');
         console.log('🔍 RealtimeAnalyzer initialized for blue squiggle diagnostics with mentor persona');
         this.setupEventListeners();
+    }
+
+    private getMentorMessageStyle(activeProfile: any, baseMessage: string, context: 'performance' | 'security' | 'quality'): string {
+        const personality = activeProfile.personality;
+        
+        // Direct, critical mentors (like Linus)
+        if (personality.communicationStyle === 'direct' && personality.feedbackApproach === 'critical') {
+            switch (context) {
+                case 'performance':
+                    return baseMessage.replace(/inefficient/i, 'inefficient. Use a Set or Map, for crying out loud!')
+                                   .replace(/can block/i, 'blocks the event loop? Really? Use async operations, this isn\'t 1995!');
+                case 'security':
+                    return baseMessage.replace(/eval\(\)/i, 'eval()? Are you insane? This is a massive security hole!')
+                                   .replace(/innerHTML/i, 'innerHTML without sanitization? That\'s how you get XSS vulnerabilities!')
+                                   .replace(/string.*callback/i, 'String callbacks in timers? That\'s just asking for trouble!');
+                case 'quality':
+                    return baseMessage.replace(/unused variable/i, 'Unused variable') + ' - clean up your code!';
+            }
+        }
+        
+        // Detailed, analytical mentors
+        if (personality.communicationStyle === 'detailed' && personality.feedbackApproach === 'analytical') {
+            switch (context) {
+                case 'performance':
+                    return baseMessage.replace(/inefficient/i, 'Performance concern: This has O(n²) complexity. Consider Set/Map for O(1) lookups');
+                case 'security':
+                    return baseMessage.replace(/security risk/i, 'Critical security vulnerability')
+                                   .replace(/can lead to/i, 'enables');
+                case 'quality':
+                    return `Code quality: ${baseMessage.toLowerCase()} should be removed for maintainability`;
+            }
+        }
+        
+        // Supportive, encouraging mentors
+        if (personality.communicationStyle === 'supportive' && personality.feedbackApproach === 'encouraging') {
+            switch (context) {
+                case 'performance':
+                    return `Consider optimizing: ${baseMessage.toLowerCase()}. This will improve your app's performance!`;
+                case 'security':
+                    return `Security improvement opportunity: ${baseMessage.toLowerCase()}. Let's make this safer!`;
+                case 'quality':
+                    return `Code improvement: ${baseMessage.toLowerCase()}. Removing this will make your code cleaner!`;
+            }
+        }
+        
+        // Default to base message
+        return baseMessage;
     }
 
     private setupEventListeners() {
@@ -51,144 +98,28 @@ export class RealtimeAnalyzer {
         }, 500);
     }
 
-    private async analyzeDocument(document: vscode.TextDocument) {
+    private analyzeDocument(document: vscode.TextDocument) {
         const content = document.getText();
-        if (!content.trim() || content === this.lastAnalyzedContent) return;
+        if (content === this.lastAnalyzedContent) return;
         
         this.lastAnalyzedContent = content;
         const diagnostics: vscode.Diagnostic[] = [];
         
-        try {
-            // Parse JavaScript/TypeScript code for AST analysis
-            if (document.languageId === 'javascript' || document.languageId === 'typescript') {
-                this.analyzeWithAST(content, diagnostics, document);
-            } else {
-                // Pattern-based analysis for other languages
-                this.analyzeWithPatterns(content, diagnostics, document);
-            }
-            
-            // Run advanced AST analysis for comprehensive error detection
+        // Try AST analysis first for JS/TS files
+        if (['javascript', 'typescript', 'javascriptreact', 'typescriptreact'].includes(document.languageId)) {
             this.enhanceWithAdvancedAnalysis(content, diagnostics, document);
-            
-            this.diagnosticCollection.set(document.uri, diagnostics);
-            
-            console.log(` RealtimeAnalyzer found ${diagnostics.length} issues in ${document.fileName}`);
-            
-        } catch (error) {
-            console.error('RealtimeAnalyzer error:', error);
-        }
-    }
-
-    private analyzeWithAST(content: string, diagnostics: vscode.Diagnostic[], document: vscode.TextDocument) {
-        try {
-            const ast = parser.parse(content, {
-                sourceType: 'module',
-                plugins: ['typescript', 'jsx', 'decorators-legacy']
-            });
-
-            traverse(ast, {
-                WhileStatement: (path) => {
-                    this.checkWhileLoop(path, diagnostics);
-                },
-                ForStatement: (path) => {
-                    this.checkForLoop(path, diagnostics);
-                }
-            });
-        } catch (error) {
-            console.log('AST parsing failed, falling back to pattern analysis');
-            this.analyzeWithPatterns(content, diagnostics, document);
-        }
-    }
-
-    private checkWhileLoop(path: any, diagnostics: vscode.Diagnostic[]) {
-        const node = path.node;
-        const line = node.loc?.start.line - 1 || 0;
-        
-        // Check for while(true) loops
-        if (t.isBooleanLiteral(node.test) && node.test.value === true) {
-            const hasBreak = this.hasBreakStatement(path);
-            if (!hasBreak) {
-                diagnostics.push(this.createDiagnostic(
-                    line, 0, 
-                    'Potential infinite loop: while(true) without break statement',
-                    vscode.DiagnosticSeverity.Error,
-                    'infinite_loop'
-                ));
-            }
+        } else {
+            // Fallback to pattern-based analysis for other languages
+            this.performPatternBasedAnalysis(content, diagnostics);
         }
         
-        // Check for missing increments in while loops
-        if (t.isIdentifier(node.test) || (t.isBinaryExpression(node.test) && t.isIdentifier(node.test.left))) {
-            const hasIncrement = this.hasIncrementOrAssignment(path);
-            const hasBreak = this.hasBreakStatement(path);
-            
-            if (!hasIncrement && !hasBreak) {
-                diagnostics.push(this.createDiagnostic(
-                    line, 0,
-                    'Potential infinite loop: missing increment or break statement',
-                    vscode.DiagnosticSeverity.Warning,
-                    'missing_increment'
-                ));
-            }
-        }
+        this.diagnosticCollection.set(document.uri, diagnostics);
     }
 
-    private checkForLoop(path: any, diagnostics: vscode.Diagnostic[]) {
-        const node = path.node;
-        const line = node.loc?.start.line - 1 || 0;
-        
-        // Check for missing increment in for loops
-        if (!node.update && !this.hasBreakStatement(path)) {
-            diagnostics.push(this.createDiagnostic(
-                line, 0,
-                'For loop missing increment expression',
-                vscode.DiagnosticSeverity.Warning,
-                'missing_increment'
-            ));
-        }
-    }
-
-    private hasBreakStatement(path: any): boolean {
-        let hasBreak = false;
-        
-        traverse(path.node.body, {
-            BreakStatement: () => {
-                hasBreak = true;
-            }
-        }, path.scope, path);
-        
-        return hasBreak;
-    }
-
-    private hasIncrementOrAssignment(path: any): boolean {
-        let hasIncrement = false;
-        
-        traverse(path.node.body, {
-            UpdateExpression: () => {
-                hasIncrement = true;
-            },
-            AssignmentExpression: () => {
-                hasIncrement = true;
-            }
-        }, path.scope, path);
-        
-        return hasIncrement;
-    }
-
-    private analyzeWithPatterns(content: string, diagnostics: vscode.Diagnostic[], document: vscode.TextDocument) {
+    private performPatternBasedAnalysis(content: string, diagnostics: vscode.Diagnostic[]) {
         const lines = content.split('\n');
         
         lines.forEach((line, index) => {
-            // Check for infinite loop patterns
-            if (/while\s*\(\s*true\s*\)/.test(line) && !content.includes('break')) {
-                diagnostics.push(this.createDiagnostic(
-                    index, 0,
-                    'Potential infinite loop: while(true) without break',
-                    vscode.DiagnosticSeverity.Error,
-                    'infinite_loop'
-                ));
-            }
-            
             // Check for common security issues
             if (/eval\s*\(/.test(line)) {
                 diagnostics.push(this.createDiagnostic(
@@ -210,38 +141,44 @@ export class RealtimeAnalyzer {
     }
 
     private enhanceWithAdvancedAnalysis(content: string, diagnostics: vscode.Diagnostic[], document: vscode.TextDocument) {
-        // Advanced AST-based analysis for complex patterns
         try {
+            const activeProfile = this.profileManager.getActiveProfile();
+            if (!activeProfile) return;
+            
+            const focusAreas = activeProfile.personality.focusAreas;
+            const expertise = activeProfile.personality.expertise;
+            
             const ast = parser.parse(content, {
                 sourceType: 'module',
                 plugins: ['typescript', 'jsx', 'decorators-legacy']
             });
 
             traverse(ast, {
-                // Detect unreachable code
+                // Detect unreachable code (always check - fundamental issue)
                 ReturnStatement: (path) => {
                     this.checkUnreachableCode(path, diagnostics);
                 },
                 
-                // Detect variable shadowing
+                // Detect unused variables (code quality mentors care about this)
                 VariableDeclarator: (path) => {
-                    this.checkVariableShadowing(path, diagnostics);
+                    if (focusAreas.includes('code quality') || focusAreas.includes('maintainability')) {
+                        this.checkUnusedVariables(path, diagnostics);
+                    }
                 },
                 
-                // Detect unused variables
-                Identifier: (path) => {
-                    this.checkUnusedVariables(path, diagnostics);
-                },
-                
-                // Detect potential null pointer exceptions
-                MemberExpression: (path) => {
-                    this.checkNullPointerAccess(path, diagnostics);
-                },
-                
-                // Detect performance and security issues
+                // Performance and security issues based on mentor focus
                 CallExpression: (path) => {
-                    this.checkPerformanceIssues(path, diagnostics);
-                    this.checkSecurityVulnerabilities(path, diagnostics);
+                    if (focusAreas.includes('performance') || expertise.includes('performance optimization')) {
+                        this.checkPerformanceIssues(path, diagnostics);
+                    }
+                    if (focusAreas.includes('security') || expertise.includes('security')) {
+                        this.checkSecurityVulnerabilities(path, diagnostics);
+                    }
+                },
+                
+                // Null pointer dereference detection
+                MemberExpression: (path) => {
+                    this.checkNullPointerDereference(path, diagnostics);
                 }
             });
         } catch (error) {
@@ -269,57 +206,39 @@ export class RealtimeAnalyzer {
         }
     }
 
-    private checkVariableShadowing(path: any, diagnostics: vscode.Diagnostic[]) {
-        const name = path.node.id?.name;
-        if (!name) return;
+    private checkUnusedVariables(path: any, diagnostics: vscode.Diagnostic[]) {
+        const activeProfile = this.profileManager.getActiveProfile();
+        if (!activeProfile) return;
         
-        let currentScope = path.scope.parent;
-        while (currentScope) {
-            if (currentScope.hasOwnBinding(name)) {
+        const node = path.node;
+        
+        if (t.isVariableDeclarator(node) && t.isIdentifier(node.id)) {
+            const varName = node.id.name;
+            
+            // Simple check - if variable starts with underscore, assume it's intentionally unused
+            if (!varName.startsWith('_')) {
                 const line = path.node.loc?.start.line - 1 || 0;
+                let baseMessage = `Unused variable '${varName}'`;
+                
+                const message = this.getMentorMessageStyle(activeProfile, baseMessage, 'quality');
+                
                 diagnostics.push(this.createDiagnostic(
                     line, 0,
-                    `Variable '${name}' shadows outer scope variable`,
-                    vscode.DiagnosticSeverity.Warning,
-                    'variable_shadowing'
+                    message,
+                    vscode.DiagnosticSeverity.Information,
+                    'style'
                 ));
-                break;
-            }
-            currentScope = currentScope.parent;
-        }
-    }
-
-    private checkUnusedVariables(path: any, diagnostics: vscode.Diagnostic[]) {
-        if (path.isReferencedIdentifier()) return;
-        
-        const binding = path.scope.getBinding(path.node.name);
-        if (binding && binding.referenced === false && binding.kind === 'var') {
-            const line = binding.path.node.loc?.start.line - 1 || 0;
-            diagnostics.push(this.createDiagnostic(
-                line, 0,
-                `Unused variable '${path.node.name}'`,
-                vscode.DiagnosticSeverity.Information,
-                'unused_variable'
-            ));
-        }
-    }
-
-    private checkNullPointerAccess(path: any, diagnostics: vscode.Diagnostic[]) {
-        const object = path.node.object;
-        
-        // Check for potential null/undefined access
-        if (t.isIdentifier(object)) {
-            const binding = path.scope.getBinding(object.name);
-            if (binding) {
-                // Simple heuristic: check if variable might be null
-                const line = path.node.loc?.start.line - 1 || 0;
-                // This is a simplified check - in practice, you'd want more sophisticated analysis
             }
         }
     }
 
     private checkPerformanceIssues(path: any, diagnostics: vscode.Diagnostic[]) {
+        const activeProfile = this.profileManager.getActiveProfile();
+        if (!activeProfile) return;
+        
         const callee = path.node.callee;
+        const isPerformanceFocused = activeProfile.personality.focusAreas.includes('performance');
+        const hasPerformanceExpertise = activeProfile.personality.expertise.includes('performance optimization');
         
         // Detect inefficient array operations in loops
         if (t.isMemberExpression(callee) && t.isIdentifier(callee.property)) {
@@ -331,10 +250,21 @@ export class RealtimeAnalyzer {
                 while (parent) {
                     if (t.isForStatement(parent) || t.isWhileStatement(parent) || t.isDoWhileStatement(parent)) {
                         const line = path.node.loc?.start.line - 1 || 0;
+                        
+                        let baseMessage = `Inefficient array method '${methodName}' in loop`;
+                        let severity = vscode.DiagnosticSeverity.Information;
+                        
+                        // Customize message and severity based on mentor personality
+                        if (isPerformanceFocused || hasPerformanceExpertise) {
+                            severity = vscode.DiagnosticSeverity.Warning;
+                        }
+                        
+                        const message = this.getMentorMessageStyle(activeProfile, baseMessage, 'performance');
+                        
                         diagnostics.push(this.createDiagnostic(
                             line, 0,
-                            `Inefficient array method '${methodName}' in loop - consider using Set or Map`,
-                            vscode.DiagnosticSeverity.Information,
+                            message,
+                            severity,
                             'performance'
                         ));
                         break;
@@ -343,40 +273,214 @@ export class RealtimeAnalyzer {
                 }
             }
         }
+        
+        // Check for synchronous operations that could block (performance mentors care)
+        if (t.isIdentifier(callee) && ['readFileSync', 'writeFileSync'].includes(callee.name)) {
+            const line = path.node.loc?.start.line - 1 || 0;
+            let baseMessage = `Synchronous file operation '${callee.name}' can block the event loop`;
+            
+            const message = this.getMentorMessageStyle(activeProfile, baseMessage, 'performance');
+            
+            diagnostics.push(this.createDiagnostic(
+                line, 0,
+                message,
+                vscode.DiagnosticSeverity.Warning,
+                'performance'
+            ));
+        }
     }
 
     private checkSecurityVulnerabilities(path: any, diagnostics: vscode.Diagnostic[]) {
+        const activeProfile = this.profileManager.getActiveProfile();
+        if (!activeProfile) return;
+        
         const callee = path.node.callee;
         
-        if (t.isIdentifier(callee)) {
-            const functionName = callee.name;
+        // Check for eval usage
+        if (t.isIdentifier(callee) && callee.name === 'eval') {
             const line = path.node.loc?.start.line - 1 || 0;
+            let baseMessage = 'Security risk: eval() can execute arbitrary code';
             
-            // Detect dangerous functions
-            switch (functionName) {
-                case 'eval':
-                    diagnostics.push(this.createDiagnostic(
-                        line, 0,
-                        'Security risk: eval() can execute arbitrary code',
-                        vscode.DiagnosticSeverity.Error,
-                        'security'
-                    ));
-                    break;
-                    
-                case 'setTimeout':
-                case 'setInterval':
-                    // Check if first argument is a string (code injection risk)
-                    if (path.node.arguments[0] && t.isStringLiteral(path.node.arguments[0])) {
-                        diagnostics.push(this.createDiagnostic(
-                            line, 0,
-                            'Security risk: Using string as timer callback can lead to code injection',
-                            vscode.DiagnosticSeverity.Warning,
-                            'security'
-                        ));
-                    }
-                    break;
+            const message = this.getMentorMessageStyle(activeProfile, baseMessage, 'security');
+            
+            diagnostics.push(this.createDiagnostic(
+                line, 0,
+                message,
+                vscode.DiagnosticSeverity.Error,
+                'security'
+            ));
+        }
+        
+        // Check for innerHTML usage
+        if (t.isMemberExpression(callee) && t.isIdentifier(callee.property) && callee.property.name === 'innerHTML') {
+            const line = path.node.loc?.start.line - 1 || 0;
+            let baseMessage = 'Security risk: innerHTML can lead to XSS attacks';
+            
+            const message = this.getMentorMessageStyle(activeProfile, baseMessage, 'security');
+            
+            diagnostics.push(this.createDiagnostic(
+                line, 0,
+                message,
+                vscode.DiagnosticSeverity.Warning,
+                'security'
+            ));
+        }
+        
+        // Check for setTimeout/setInterval usage with string callback
+        if (t.isIdentifier(callee) && ['setTimeout', 'setInterval'].includes(callee.name)) {
+            const line = path.node.loc?.start.line - 1 || 0;
+            if (path.node.arguments[0] && t.isStringLiteral(path.node.arguments[0])) {
+                let baseMessage = 'Security risk: Using string as timer callback can lead to code injection';
+                
+                const message = this.getMentorMessageStyle(activeProfile, baseMessage, 'security');
+                
+                diagnostics.push(this.createDiagnostic(
+                    line, 0,
+                    message,
+                    vscode.DiagnosticSeverity.Warning,
+                    'security'
+                ));
             }
         }
+    }
+
+    private checkNullPointerDereference(path: any, diagnostics: vscode.Diagnostic[]) {
+        const activeProfile = this.profileManager.getActiveProfile();
+        if (!activeProfile) return;
+        
+        const node = path.node;
+        const object = node.object;
+        
+        // Check for direct null/undefined access
+        if (t.isNullLiteral(object) || (t.isIdentifier(object) && object.name === 'undefined')) {
+            const line = node.loc?.start.line - 1 || 0;
+            let baseMessage = `Null pointer dereference: Cannot access property of ${t.isNullLiteral(object) ? 'null' : 'undefined'}`;
+            
+            const message = this.getMentorMessageStyle(activeProfile, baseMessage, 'quality');
+            
+            diagnostics.push(this.createDiagnostic(
+                line, 0,
+                message,
+                vscode.DiagnosticSeverity.Error,
+                'null_pointer'
+            ));
+            return;
+        }
+        
+        // Check for potentially null variables (simple heuristic)
+        if (t.isIdentifier(object)) {
+            const varName = object.name;
+            
+            // Check if this variable was assigned from a potentially null-returning function
+            let currentPath = path;
+            while (currentPath && currentPath.scope) {
+                const binding = currentPath.scope.getBinding(varName);
+                if (binding && binding.path && binding.path.isVariableDeclarator()) {
+                    const init = binding.path.node.init;
+                    if (init && t.isCallExpression(init)) {
+                        const callee = init.callee;
+                        let calleeString = '';
+                        
+                        if (t.isMemberExpression(callee)) {
+                            if (t.isIdentifier(callee.property)) {
+                                calleeString = callee.property.name;
+                            }
+                        } else if (t.isIdentifier(callee)) {
+                            calleeString = callee.name;
+                        }
+                        
+        
+                    }
+                    break;
+                }
+                currentPath = currentPath.parentPath;
+            }
+        }
+    }
+    
+    private hasNullCheckBefore(memberPath: any, varName: string): boolean {
+        // Look for null checks in the same block before this member access
+        let currentPath = memberPath.parentPath;
+        
+        while (currentPath) {
+            if (t.isBlockStatement(currentPath.node)) {
+                const statements = currentPath.node.body;
+                const memberStatement = this.findStatementContaining(statements, memberPath.node);
+                
+                if (memberStatement !== -1) {
+                    // Check previous statements for null checks
+                    for (let i = 0; i < memberStatement; i++) {
+                        const stmt = statements[i];
+                        if (this.containsNullCheck(stmt, varName)) {
+                            return true;
+                        }
+                    }
+                }
+                break;
+            }
+            currentPath = currentPath.parentPath;
+        }
+        
+        return false;
+    }
+    
+    private findStatementContaining(statements: any[], targetNode: any): number {
+        for (let i = 0; i < statements.length; i++) {
+            if (this.nodeContains(statements[i], targetNode)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+    
+    private nodeContains(container: any, target: any): boolean {
+        if (container === target) return true;
+        
+        // Simple traversal to check if target is contained in container
+        if (container && typeof container === 'object') {
+            for (const key in container) {
+                if (container[key] && typeof container[key] === 'object') {
+                    if (this.nodeContains(container[key], target)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        return false;
+    }
+    
+    private containsNullCheck(statement: any, varName: string): boolean {
+        // Look for patterns like: if (varName), if (varName != null), if (varName !== null), etc.
+        if (t.isIfStatement(statement)) {
+            const test = statement.test;
+            
+            // Direct variable check: if (varName)
+            if (t.isIdentifier(test) && test.name === varName) {
+                return true;
+            }
+            
+            // Binary expression checks: if (varName != null), if (varName !== null), etc.
+            if (t.isBinaryExpression(test)) {
+                const left = test.left;
+                const right = test.right;
+                
+                if (t.isIdentifier(left) && left.name === varName) {
+                    if (t.isNullLiteral(right) || (t.isIdentifier(right) && right.name === 'undefined')) {
+                        return ['!=', '!=='].includes(test.operator);
+                    }
+                }
+            }
+            
+            // Logical expressions: if (varName && ...)
+            if (t.isLogicalExpression(test) && test.operator === '&&') {
+                if (t.isIdentifier(test.left) && test.left.name === varName) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
     }
 
     public activate() {
@@ -391,9 +495,9 @@ export class RealtimeAnalyzer {
     }
 
     public dispose() {
+        this.isEnabled = false;
+        this.diagnosticCollection.clear();
         this.diagnosticCollection.dispose();
-        if (this.analysisTimeout) {
-            clearTimeout(this.analysisTimeout);
-        }
+        console.log('🔍 RealtimeAnalyzer disposed');
     }
 }
