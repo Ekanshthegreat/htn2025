@@ -63,10 +63,6 @@ export class ProactiveCodeAnalyzer {
     private initializePatterns(): void {
         // Bug risk patterns
         this.issuePatterns = new Map([
-            ['null_dereference', [
-                /\w+\.\w+(?!\s*[?.])/g, // obj.prop without null check
-                /\w+\[\w+\](?!\s*[?.])/g // obj[key] without null check
-            ]],
             ['async_await_missing', [
                 /(?:fetch|axios|http)\s*\([^)]*\)(?!\s*\.then)(?!\s*await)/g,
                 /Promise\s*\([^)]*\)(?!\s*\.then)(?!\s*await)/g
@@ -702,7 +698,6 @@ export class ProactiveCodeAnalyzer {
     private getSeverityForPattern(patternName: string): 'critical' | 'high' | 'medium' | 'low' {
         const severityMap: Record<string, 'critical' | 'high' | 'medium' | 'low'> = {
             'infinite_loop_risk': 'critical',
-            'null_dereference': 'high',
             'async_await_missing': 'medium',
             'memory_leak': 'high'
         };
@@ -712,7 +707,6 @@ export class ProactiveCodeAnalyzer {
     private getMessageForPattern(patternName: string, match: string): string {
         const messageMap: Record<string, string> = {
             'infinite_loop_risk': 'Potential infinite loop detected',
-            'null_dereference': 'Potential null pointer dereference',
             'async_await_missing': 'Missing await for async operation',
             'memory_leak': 'Potential memory leak detected'
         };
@@ -722,7 +716,6 @@ export class ProactiveCodeAnalyzer {
     private getSuggestionForPattern(patternName: string): string {
         const suggestionMap: Record<string, string> = {
             'infinite_loop_risk': 'Add break statement or modify loop condition',
-            'null_dereference': 'Add null check before accessing property',
             'async_await_missing': 'Add await keyword or .then() handler',
             'memory_leak': 'Add cleanup code to remove listeners'
         };
@@ -731,7 +724,6 @@ export class ProactiveCodeAnalyzer {
 
     private getQuickFixForPattern(patternName: string, match: string): string | undefined {
         const quickFixMap: Record<string, string> = {
-            'null_dereference': `${match}?.`,
             'async_await_missing': `await ${match}`
         };
         return quickFixMap[patternName];
