@@ -25,6 +25,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AIMentorProvider = void 0;
 const vscode = __importStar(require("vscode"));
+const vapiServer_1 = require("./vapiServer");
 class AIMentorProvider {
     constructor(_extensionUri, codeWatcher, llmService, profileManager) {
         this._extensionUri = _extensionUri;
@@ -52,6 +53,9 @@ class AIMentorProvider {
                     break;
                 case 'switchProfile':
                     this.switchProfile(data.profileId);
+                    break;
+                case 'startVoiceChat':
+                    this.startVoiceChat();
                     break;
             }
         });
@@ -266,6 +270,18 @@ class AIMentorProvider {
             }
         }
     }
+    async startVoiceChat() {
+        if (!this.vapiServer) {
+            this.vapiServer = new vapiServer_1.VapiServer(this.profileManager);
+        }
+        try {
+            const port = await this.vapiServer.start();
+            vscode.env.openExternal(vscode.Uri.parse(`http://localhost:${port}`));
+        }
+        catch (error) {
+            vscode.window.showErrorMessage('Failed to start voice chat: ' + error.message);
+        }
+    }
     _getHtmlForWebview(webview) {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.css'));
@@ -287,7 +303,6 @@ class AIMentorProvider {
             return `<option value="${mentor.id}" ${mentor.id === this.profileManager.activeProfileId ? 'selected' : ''}>${mentor.name}</option>`;
         }).join('')}
                             </select>
-                            <button id="clearBtn" class="btn btn-secondary">Clear</button>
                         </div>
                     </div>
                     
@@ -315,6 +330,8 @@ class AIMentorProvider {
                         <textarea id="codeInput" placeholder="Paste code here for explanation..."></textarea>
                         <button id="explainBtn" class="btn btn-primary">Explain Code</button>
                     </div>
+                    <button id="clearBtn" class="btn btn-secondary">Clear</button>
+                    <button id="voiceChatBtn" class="btn btn-primary">🎤 Speak to Mentor</button>
                 </div>
 
                 <script src="${scriptUri}"></script>

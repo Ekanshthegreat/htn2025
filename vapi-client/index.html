@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Talk to Your Mentor</title>
+    <style>
+        body { font-family: system-ui; max-width: 720px; margin: 2rem auto; }
+        #log { white-space: pre-wrap; border: 1px solid #ddd; padding: 12px; height: 240px; overflow: auto; }
+        button { padding: 10px 14px; }
+        .row { margin: 12px 0; }
+    </style>
+</head>
+<body>
+    <h1 id="mentorTitle">Loading mentor...</h1>
+    <div class="row">
+        <button id="connect">Start Conversation</button>
+        <button id="hang" disabled>End Conversation</button>
+    </div>
+    <div id="log"></div>
+
+    <script type="module">
+        import Vapi from "https://esm.sh/@vapi-ai/web";
+
+        const log = (...a) => {
+            const el = document.getElementById("log");
+            el.textContent += a.join(" ") + "\n";
+            el.scrollTop = el.scrollHeight;
+        };
+
+        const connectBtn = document.getElementById("connect");
+        const hangBtn = document.getElementById("hang");
+        const titleEl = document.getElementById("mentorTitle");
+
+        // Initialize VAPI with your public key
+        const vapi = new Vapi("365fc87d-f1cb-46a1-9e20-be85b18aab41");
+
+        // Get mentor data from the server
+        async function getMentorData() {
+            const response = await fetch('http://localhost:3000/mentor-data');
+            return response.json();
+        }
+
+        // Wire up events
+        vapi.on("call-start", () => {
+            log("✅ Connected to mentor");
+            connectBtn.disabled = true;
+            hangBtn.disabled = false;
+        });
+
+        vapi.on("message", (m) => {
+            if (m.type === "transcript") {
+                const who = m.role === "user" ? "🧑 You" : "🤖 Mentor";
+                log(`${who}: ${m.transcript}`);
+            }
+        });
+
+        vapi.on("call-end", () => {
+            log("👋 Conversation ended");
+            connectBtn.disabled = false;
+            hangBtn.disabled = true;
+        });
+
+        // Connect handler
+        connectBtn.onclick = async () => {
+            try {
+                await navigator.mediaDevices.getUserMedia({ audio: true });
+                const mentorData = await getMentorData();
+                titleEl.textContent = `Talking with ${mentorData.mentorName}`;
+                
+                await vapi.start("8026e50f-8bd8-42e6-9f95-6176698aa424", {
+                    variableValues: mentorData
+                });
+            } catch (e) {
+                log("❌ Error:", e?.message || e);
+                connectBtn.disabled = false;
+                hangBtn.disabled = true;
+            }
+        };
+
+        hangBtn.onclick = async () => {
+            try { await vapi.stop(); } catch {}
+        };
+    </script>
+</body>
+</html>

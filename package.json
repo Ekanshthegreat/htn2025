@@ -153,7 +153,9 @@
     "@babel/types": "^7.23.0",
     "@google/generative-ai": "^0.2.1",
     "@vapi-ai/web": "^1.0.0",
+    "cors": "^2.8.5",
     "diff": "^5.1.0",
+    "express": "^5.1.0",
     "openai": "^5.20.2",
     "ws": "^8.14.0"
   }

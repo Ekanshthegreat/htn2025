@@ -280,6 +280,9 @@ function deactivate() {
     if (codeWatcher) {
         codeWatcher.deactivate();
     }
+    if (aiMentorProvider?.vapiServer) {
+        aiMentorProvider.vapiServer.stop();
+    }
 }
 exports.deactivate = deactivate;
 //# sourceMappingURL=extension.js.map

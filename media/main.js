@@ -750,4 +750,9 @@
             welcome.style.animation = 'fadeInUp 0.6s ease-out';
         }
     }, 500);
+
+    // Add event listener for voice chat button:
+    document.getElementById('voiceChatBtn').addEventListener('click', () => {
+        vscode.postMessage({ type: 'startVoiceChat' });
+    });
 })();

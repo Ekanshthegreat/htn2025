@@ -324,4 +324,8 @@ export function deactivate() {
     if (codeWatcher) {
         codeWatcher.deactivate();
     }
+
+    if (aiMentorProvider?.vapiServer) {
+        aiMentorProvider.vapiServer.stop();
+    }
 }

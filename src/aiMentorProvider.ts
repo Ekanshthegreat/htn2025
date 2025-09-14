@@ -2,11 +2,14 @@ import * as vscode from 'vscode';
 import { CodeWatcher } from './codeWatcher';
 import { LLMService, MentorResponse } from './llmService';
 import { ProfileManager } from './profileManager';
+import { VapiServer } from './vapiServer';
 
 export class AIMentorProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'aiMentorPanel';
     private _view?: vscode.WebviewView;
     private messages: MentorResponse[] = [];
+    // Change from private to public
+    public vapiServer?: VapiServer;
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -42,6 +45,9 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'switchProfile':
                     this.switchProfile(data.profileId);
+                    break;
+                case 'startVoiceChat':
+                    this.startVoiceChat();
                     break;
             }
         });
@@ -284,6 +290,19 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
         }
     }
 
+    private async startVoiceChat() {
+        if (!this.vapiServer) {
+            this.vapiServer = new VapiServer(this.profileManager);
+        }
+        
+        try {
+            const port = await this.vapiServer.start();
+            vscode.env.openExternal(vscode.Uri.parse(`http://localhost:${port}`));
+        } catch (error) {
+            vscode.window.showErrorMessage('Failed to start voice chat: ' + error.message);
+        }
+    }
+
     private _getHtmlForWebview(webview: vscode.Webview) {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.css'));
@@ -306,7 +325,6 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                                     return `<option value="${mentor.id}" ${mentor.id === this.profileManager.activeProfileId ? 'selected' : ''}>${mentor.name}</option>`;
                                 }).join('')}
                             </select>
-                            <button id="clearBtn" class="btn btn-secondary">Clear</button>
                         </div>
                     </div>
                     
@@ -334,6 +352,8 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                         <textarea id="codeInput" placeholder="Paste code here for explanation..."></textarea>
                         <button id="explainBtn" class="btn btn-primary">Explain Code</button>
                     </div>
+                    <button id="clearBtn" class="btn btn-secondary">Clear</button>
+                    <button id="voiceChatBtn" class="btn btn-primary">🎤 Speak to Mentor</button>
                 </div>
 
                 <script src="${scriptUri}"></script>
