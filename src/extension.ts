@@ -41,6 +41,9 @@ export function activate(context: vscode.ExtensionContext) {
     
     // Connect codeWatcher to aiMentorProvider for UI updates
     codeWatcher.setAIMentorProvider(aiMentorProvider);
+    
+    // Connect hoverProvider to aiMentorProvider for chat panel updates
+    hoverProvider.setAIMentorProvider(aiMentorProvider);
 
     // Register the webview provider
     context.subscriptions.push(

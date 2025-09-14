@@ -26,12 +26,17 @@ interface FileAnalysis {
 
 export class MentorHoverProvider implements vscode.HoverProvider {
     private personalityService: MentorPersonalityService;
+    private aiMentorProvider?: any;
 
     constructor(
         private profileManager: ProfileManager,
         private astAnalyzer: ASTAnalyzer
     ) {
         this.personalityService = new MentorPersonalityService();
+    }
+
+    public setAIMentorProvider(provider: any) {
+        this.aiMentorProvider = provider;
     }
 
     async provideHover(
@@ -65,16 +70,23 @@ export class MentorHoverProvider implements vscode.HoverProvider {
 
         if (suggestions.length === 0) return undefined;
 
+        // Send suggestions to chat panel if available
+        if (this.aiMentorProvider && suggestions.length > 0) {
+            const mentorResponse = {
+                type: 'suggestion',
+                message: `**${activeProfile.name}** analyzed your code at line ${position.line + 1}:`,
+                suggestions: suggestions.map(s => s.replace(/\*\*/g, '').replace(/🔍|⚡|🧪|🏗️|🐧|⚛️|📦|🚀|🎨|🔥|🌟|✨|📏|📝|🎯/g, '').trim()),
+                warnings: [],
+                timestamp: Date.now()
+            };
+            
+            this.aiMentorProvider.addMessage(mentorResponse);
+        }
+
+        // Still show a minimal hover for immediate feedback
         const markdown = new vscode.MarkdownString();
         markdown.isTrusted = true;
-        markdown.supportHtml = true;
-
-        // Add mentor header
-        markdown.appendMarkdown(`### ${activeProfile.avatar} ${activeProfile.name}\n\n`);
-        
-        suggestions.forEach(suggestion => {
-            markdown.appendMarkdown(`${suggestion}\n\n`);
-        });
+        markdown.appendMarkdown(`💡 **${activeProfile.name}** sent ${suggestions.length} suggestion${suggestions.length > 1 ? 's' : ''} to chat panel`);
 
         return new vscode.Hover(markdown, wordRange);
     }

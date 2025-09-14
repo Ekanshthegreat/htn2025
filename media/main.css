@@ -24,6 +24,20 @@ body {
     border-bottom: 1px solid var(--vscode-panel-border);
 }
 
+.mentor-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.mentor-avatar-img {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid var(--vscode-focusBorder);
+    object-fit: cover;
+}
+
 .header h2 {
     margin: 0;
     color: var(--vscode-foreground);
@@ -129,6 +143,19 @@ body {
     font-size: 16px;
 }
 
+.message-avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    margin-right: 8px;
+    object-fit: cover;
+}
+
+.hover-suggestion {
+    border-left-color: var(--vscode-terminal-ansiMagenta);
+    background: linear-gradient(90deg, rgba(255, 0, 255, 0.05) 0%, transparent 100%);
+}
+
 .message-content {
     line-height: 1.5;
     white-space: pre-wrap;
@@ -154,31 +181,6 @@ body {
     overflow-x: auto;
 }
 
-.input-section {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    flex-shrink: 0; /* Prevent input section from shrinking */
-    min-height: 120px; /* Ensure minimum space for input and button */
-}
-
-#codeInput {
-    min-height: 80px;
-    max-height: 120px; /* Prevent textarea from growing too large */
-    padding: 8px;
-    background-color: var(--vscode-input-background);
-    color: var(--vscode-input-foreground);
-    border: 1px solid var(--vscode-input-border);
-    border-radius: 4px;
-    font-family: var(--vscode-editor-font-family);
-    font-size: var(--vscode-editor-font-size);
-    resize: vertical;
-}
-
-#codeInput:focus {
-    outline: none;
-    border-color: var(--vscode-focusBorder);
-}
 
 .btn {
     padding: 8px 16px;
@@ -642,16 +644,6 @@ body {
     color: var(--vscode-terminal-ansiBlue);
 }
 
-/* Enhanced input */
-#codeInput {
-    transition: all 0.3s ease;
-    resize: none;
-}
-
-#codeInput:focus {
-    transform: scale(1.02);
-    box-shadow: 0 0 0 2px var(--vscode-focusBorder);
-}
 
 /* Responsive design */
 @media (max-width: 600px) {

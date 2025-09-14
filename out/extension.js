@@ -63,6 +63,8 @@ function activate(context) {
     hoverProvider = new hoverProvider_1.MentorHoverProvider(profileManager, astAnalyzer);
     // Connect codeWatcher to aiMentorProvider for UI updates
     codeWatcher.setAIMentorProvider(aiMentorProvider);
+    // Connect hoverProvider to aiMentorProvider for chat panel updates
+    hoverProvider.setAIMentorProvider(aiMentorProvider);
     // Register the webview provider
     context.subscriptions.push(vscode.window.registerWebviewViewProvider('aiMentorPanel', aiMentorProvider));
     // Register hover provider for all supported languages

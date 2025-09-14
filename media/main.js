@@ -4,10 +4,9 @@
     // DOM elements
     const messagesContainer = document.getElementById('messages');
     const clearBtn = document.getElementById('clearBtn');
-    const explainBtn = document.getElementById('explainBtn');
-    const codeInput = document.getElementById('codeInput');
     const statusText = document.getElementById('statusText');
     const mentorSelect = document.getElementById('mentorSelect');
+    const mentorAvatar = document.getElementById('mentorAvatar');
     
     // Enhanced state management
     let currentMentor = {
@@ -36,46 +35,7 @@
         }
     });
 
-    explainBtn.addEventListener('click', () => {
-        const code = codeInput.value.trim();
-        if (code) {
-            // Add user message to UI immediately
-            addUserMessage(code);
-            
-            // Show mentor is thinking
-            showTypingIndicator();
-            
-            vscode.postMessage({ 
-                type: 'requestExplanation', 
-                code: code,
-                context: conversationContext.slice(-3) // Send recent context
-            });
-            
-            codeInput.value = '';
-            updateStatus(`${currentMentor.name} is analyzing your code...`);
-            
-            // Animate the explain button
-            explainBtn.classList.add('processing');
-            setTimeout(() => explainBtn.classList.remove('processing'), 2000);
-            
-            // Safety timeout to hide typing indicator if no response comes
-            setTimeout(() => {
-                hideTypingIndicator();
-                updateStatus(`${currentMentor.name} is ready to help`);
-            }, 15000); // 15 second timeout
-        } else {
-            // Shake animation for empty input
-            codeInput.classList.add('shake');
-            setTimeout(() => codeInput.classList.remove('shake'), 500);
-            updateStatus('Please enter some code to analyze!');
-        }
-    });
 
-    codeInput.addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.key === 'Enter') {
-            explainBtn.click();
-        }
-    });
 
     // Enhanced mentor dropdown selection
     mentorSelect.addEventListener('change', (e) => {
@@ -100,7 +60,7 @@
                 });
                 
                 // Add system message about mentor switch
-                addSystemMessage(`${currentMentor.avatar} ${currentMentor.name} has joined the conversation!`);
+                addSystemMessage(`${currentMentor.name} has joined the conversation!`);
                 
                 updateStatus(`${currentMentor.name} is ready to help`);
             }
@@ -121,6 +81,10 @@
                 break;
             case 'updateProfiles':
                 updateProfiles(message.profiles, message.activeProfileId, message.activeMentorName);
+                break;
+            case 'hoverSuggestion':
+                // Handle hover suggestions sent to chat panel
+                addHoverSuggestionMessage(message.suggestion);
                 break;
             case 'mentorTyping':
                 showTypingIndicator();
@@ -380,7 +344,17 @@
                 console.log('Setting active mentor:', activeProfile.name, '(ID:', activeProfile.id, ')');
                 currentMentor.id = activeProfile.id;
                 currentMentor.name = activeProfile.name;
-                currentMentor.avatar = activeProfile.avatar || '🤖';
+                currentMentor.avatar = activeProfile.avatar || 'https://avatars.githubusercontent.com/u/60302907?v=4';
+                
+                // Update avatar image in header
+                if (mentorAvatar && activeProfile) {
+                    const avatarUrl = activeProfile.githubUsername 
+                        ? `https://avatars.githubusercontent.com/${activeProfile.githubUsername}?v=4`
+                        : activeProfile.avatar || 'https://avatars.githubusercontent.com/u/60302907?v=4';
+                    
+                    mentorAvatar.src = avatarUrl;
+                    mentorAvatar.alt = `${activeProfile.name} Avatar`;
+                }
             } else {
                 console.warn('Active profile ID not found in available profiles:', activeProfileId);
             }
@@ -408,7 +382,7 @@
         // Always update the header to show the active mentor
         const headerElement = document.querySelector('#mentorTitle');
         if (headerElement) {
-            headerElement.textContent = `🤖 ${mentorName || 'AI Mentor'}`;
+            headerElement.textContent = mentorName || 'AI Mentor';
         }
         
         // Update welcome message if it exists
@@ -469,6 +443,55 @@
         `;
         messagesContainer.appendChild(messageDiv);
         smoothScrollToBottom();
+    }
+
+    function addHoverSuggestionMessage(suggestion) {
+        // Clear welcome message when we have real messages
+        const welcomeMsg = messagesContainer.querySelector('.welcome-message');
+        if (welcomeMsg) {
+            welcomeMsg.style.opacity = '0';
+            setTimeout(() => welcomeMsg?.remove(), 300);
+        }
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message suggestion hover-suggestion';
+        messageDiv.style.opacity = '0';
+        messageDiv.style.transform = 'translateY(20px)';
+
+        const timestamp = new Date().toLocaleTimeString();
+        const avatarUrl = currentMentor.avatar.startsWith('http') ? currentMentor.avatar : 'https://avatars.githubusercontent.com/u/60302907?v=4';
+
+        let html = `
+            <div class="message-header">
+                <img class="message-avatar" src="${avatarUrl}" alt="${currentMentor.name}" />
+                <span class="message-title">${suggestion.message || `${currentMentor.name} Code Analysis`}</span>
+                <span class="message-timestamp">${timestamp}</span>
+            </div>
+        `;
+
+        if (suggestion.suggestions && suggestion.suggestions.length > 0) {
+            html += '<div class="suggestions-container">';
+            html += '<h4>💡 Suggestions:</h4>';
+            html += '<ul class="suggestions-list">';
+            suggestion.suggestions.forEach((suggestionText, idx) => {
+                html += `<li class="suggestion-item">
+                    <span class="suggestion-text">${escapeHtml(suggestionText)}</span>
+                </li>`;
+            });
+            html += '</ul></div>';
+        }
+
+        messageDiv.innerHTML = html;
+        messagesContainer.appendChild(messageDiv);
+
+        // Animate in
+        setTimeout(() => {
+            messageDiv.style.opacity = '1';
+            messageDiv.style.transform = 'translateY(0)';
+        }, 100);
+
+        smoothScrollToBottom();
+        updateStatus(`${currentMentor.name} analyzed your code`);
     }
 
     function showTypingIndicator() {
@@ -579,21 +602,6 @@
         }
     };
 
-    window.applySuggestion = function(suggestion, idx) {
-        // Apply suggestion to code input
-        codeInput.value = suggestion;
-        codeInput.focus();
-        
-        // Show feedback
-        updateStatus(`Applied suggestion: ${suggestion.substring(0, 50)}...`);
-        
-        // Send analytics
-        vscode.postMessage({
-            type: 'suggestionApplied',
-            suggestion: suggestion,
-            index: idx
-        });
-    };
 
     window.dismissWarning = function(messageId, warningIdx) {
         const warningItem = document.querySelector(`[data-message-id="${messageId}"] .warning-item:nth-child(${warningIdx + 1})`);
@@ -680,16 +688,6 @@
                     e.preventDefault();
                     clearMessages();
                     break;
-                case 'Enter':
-                    if (e.shiftKey) {
-                        e.preventDefault();
-                        explainBtn.click();
-                    }
-                    break;
-                case '/':
-                    e.preventDefault();
-                    codeInput.focus();
-                    break;
                 case 'Escape':
                     e.preventDefault();
                     hideTypingIndicator(); // Emergency stop for stuck indicators
@@ -699,11 +697,6 @@
         }
     });
 
-    // Auto-resize textarea
-    codeInput.addEventListener('input', function() {
-        this.style.height = 'auto';
-        this.style.height = Math.min(this.scrollHeight, 200) + 'px';
-    });
 
     // Initialize enhanced features
     updateMentorName('AI Mentor');
