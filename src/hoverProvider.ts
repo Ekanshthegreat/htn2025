@@ -40,6 +40,10 @@ export class MentorHoverProvider implements vscode.HoverProvider {
         token: vscode.CancellationToken
     ): Promise<vscode.Hover | undefined> {
         const activeProfile = this.profileManager.getActiveProfile();
+        if (!activeProfile) {
+            return undefined; // No active mentor, no hover.
+        }
+
         const wordRange = document.getWordRangeAtPosition(position);
         const line = document.lineAt(position.line);
         const lineText = line.text;
@@ -69,8 +73,14 @@ export class MentorHoverProvider implements vscode.HoverProvider {
         markdown.isTrusted = true;
         markdown.supportHtml = true;
 
-        // Add mentor header
-        markdown.appendMarkdown(`### ${activeProfile.avatar} ${activeProfile.name}\n\n`);
+        // Add mentor header with image avatar
+        let avatarMarkdown = '';
+        if (activeProfile.avatar && activeProfile.avatar.startsWith('http')) {
+            avatarMarkdown = `<img src="${activeProfile.avatar}" width="24" height="24" style="border-radius: 50%; vertical-align: middle;" alt="${activeProfile.name}'s avatar">`;
+        } else {
+            avatarMarkdown = activeProfile.avatar || '🤖';
+        }
+        markdown.appendMarkdown(`### ${avatarMarkdown} ${activeProfile.name}\n\n`);
         
         suggestions.forEach(suggestion => {
             markdown.appendMarkdown(`${suggestion}\n\n`);
