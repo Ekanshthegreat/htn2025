@@ -4,10 +4,10 @@
     // DOM elements
     const messagesContainer = document.getElementById('messages');
     const clearBtn = document.getElementById('clearBtn');
-    const explainBtn = document.getElementById('explainBtn');
-    const codeInput = document.getElementById('codeInput');
+    const analyzeBtn = document.getElementById('analyzeBtn');
     const statusText = document.getElementById('statusText');
     const mentorSelect = document.getElementById('mentorSelect');
+    const mentorAvatar = document.getElementById('mentorAvatar');
     
     // Enhanced state management
     let currentMentor = {
@@ -15,20 +15,45 @@
         name: 'AI Mentor',
         avatar: '🤖',
         isTyping: false,
-        lastActivity: Date.now()
+        lastActivity: Date.now(),
+        personality: null
     };
     
     let availableProfiles = [];
-    
     let messageQueue = [];
     let isProcessingQueue = false;
     let typingIndicator = null;
-    let mentorMood = 'neutral'; // neutral, happy, frustrated, focused
+    let mentorMood = 'neutral';
     let conversationContext = [];
+    let mermaidLoaded = false;
+
+    // Load Mermaid.js for diagram rendering
+    function loadMermaid() {
+        if (!mermaidLoaded) {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';
+            script.onload = () => {
+                mermaid.initialize({ 
+                    startOnLoad: true,
+                    theme: 'dark',
+                    themeVariables: {
+                        primaryColor: '#007ACC',
+                        primaryTextColor: '#FFFFFF',
+                        primaryBorderColor: '#007ACC',
+                        lineColor: '#569CD6',
+                        secondaryColor: '#1E1E1E',
+                        tertiaryColor: '#2D2D30'
+                    }
+                });
+                mermaidLoaded = true;
+            };
+            document.head.appendChild(script);
+        }
+    }
 
     // Enhanced event listeners
     clearBtn.addEventListener('click', () => {
-        hideTypingIndicator(); // Clear any stuck indicators
+        hideTypingIndicator();
         if (confirm('Are you sure you want to clear all conversation history?')) {
             vscode.postMessage({ type: 'clearHistory' });
             clearMessages();
@@ -36,45 +61,10 @@
         }
     });
 
-    explainBtn.addEventListener('click', () => {
-        const code = codeInput.value.trim();
-        if (code) {
-            // Add user message to UI immediately
-            addUserMessage(code);
-            
-            // Show mentor is thinking
-            showTypingIndicator();
-            
-            vscode.postMessage({ 
-                type: 'requestExplanation', 
-                code: code,
-                context: conversationContext.slice(-3) // Send recent context
-            });
-            
-            codeInput.value = '';
-            updateStatus(`${currentMentor.name} is analyzing your code...`);
-            
-            // Animate the explain button
-            explainBtn.classList.add('processing');
-            setTimeout(() => explainBtn.classList.remove('processing'), 2000);
-            
-            // Safety timeout to hide typing indicator if no response comes
-            setTimeout(() => {
-                hideTypingIndicator();
-                updateStatus(`${currentMentor.name} is ready to help`);
-            }, 15000); // 15 second timeout
-        } else {
-            // Shake animation for empty input
-            codeInput.classList.add('shake');
-            setTimeout(() => codeInput.classList.remove('shake'), 500);
-            updateStatus('Please enter some code to analyze!');
-        }
-    });
-
-    codeInput.addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.key === 'Enter') {
-            explainBtn.click();
-        }
+    analyzeBtn.addEventListener('click', () => {
+        console.log('Analyze button clicked');
+        vscode.postMessage({ type: 'analyzeCode' });
+        updateStatus('Analyzing your code with AI...');
     });
 
     // Enhanced mentor dropdown selection
@@ -83,44 +73,57 @@
         if (mentorId && mentorId !== currentMentor.id && availableProfiles.length > 0) {
             const selectedProfile = availableProfiles.find(p => p.id === mentorId);
             if (selectedProfile) {
-                // Show transition animation
-                if (currentMentor.id) {
-                    showMentorTransition(currentMentor.id, mentorId);
-                }
-                
-                // Update current mentor
                 currentMentor.id = selectedProfile.id;
                 currentMentor.name = selectedProfile.name;
                 currentMentor.avatar = selectedProfile.avatar || '🤖';
+                currentMentor.personality = selectedProfile.personality;
                 
-                // Send message to extension
                 vscode.postMessage({ 
                     type: 'switchProfile', 
                     profileId: mentorId 
                 });
                 
-                // Add system message about mentor switch
-                addSystemMessage(`${currentMentor.avatar} ${currentMentor.name} has joined the conversation!`);
-                
                 updateStatus(`${currentMentor.name} is ready to help`);
+                applyMentorTheme(selectedProfile.personality);
             }
         }
     });
 
-    // Enhanced message handling
+    // Enhanced message handling with consolidated mentor messages
     window.addEventListener('message', event => {
         const message = event.data;
+        console.log('=== WEBVIEW RECEIVED MESSAGE ===');
+        console.log('Message type:', message.type);
+        console.log('Message data:', message);
         
         switch (message.type) {
             case 'updateMessages':
+                console.log('Processing legacy updateMessages with', message.messages?.length || 0, 'messages');
                 hideTypingIndicator();
                 displayMessages(message.messages);
+                break;
+            case 'updateConsolidatedMessages':
+                console.log('Processing consolidated messages with', message.messages?.length || 0, 'messages');
+                hideTypingIndicator();
+                displayConsolidatedMessages(message.messages);
                 break;
             case 'statusUpdate':
                 updateStatus(message.status);
                 break;
             case 'updateProfiles':
                 updateProfiles(message.profiles, message.activeProfileId, message.activeMentorName);
+                break;
+            case 'hoverSuggestion':
+                addHoverSuggestionMessage(message.suggestion);
+                break;
+            case 'proactiveAnalysis':
+                addProactiveAnalysisMessage(message.analysis);
+                break;
+            case 'codeFlowDiagram':
+                addCodeFlowDiagram(message.diagram);
+                break;
+            case 'performanceMetrics':
+                addPerformanceMetrics(message.metrics);
                 break;
             case 'mentorTyping':
                 showTypingIndicator();
@@ -139,32 +142,74 @@
     });
 
     function displayMessages(messages) {
-        // Keep welcome message if no other messages
-        if (messages.length === 0) {
+        console.log('=== displayMessages called (legacy) ===');
+        console.log('Messages array:', messages);
+        console.log('Messages length:', messages?.length || 0);
+        console.log('Messages container exists:', !!messagesContainer);
+        
+        if (!messages || messages.length === 0) {
+            console.log('No messages to display');
             return;
         }
 
-        // Clear welcome message when we have real messages
         const welcomeMsg = messagesContainer.querySelector('.welcome-message');
         if (welcomeMsg && messages.length > 0) {
+            console.log('Hiding welcome message');
             welcomeMsg.style.opacity = '0';
             setTimeout(() => welcomeMsg?.remove(), 300);
         }
 
-        // Add new messages with animation
         messages.forEach((msg, index) => {
+            console.log(`Processing message ${index}:`, msg);
             if (!document.querySelector(`[data-message-id="${index}"]`)) {
+                console.log(`Adding new message ${index}`);
                 addMessage(msg, index);
-                // Add to conversation context
                 conversationContext.push({
                     type: msg.type,
                     message: msg.message,
                     timestamp: Date.now()
                 });
+            } else {
+                console.log(`Message ${index} already exists, skipping`);
             }
         });
 
-        // Smooth scroll to bottom
+        smoothScrollToBottom();
+        updateStatus(`${currentMentor.name} is ready to help`);
+    }
+
+    function displayConsolidatedMessages(messages) {
+        console.log('=== displayConsolidatedMessages called ===');
+        console.log('Consolidated messages array:', messages);
+        
+        if (!messages || messages.length === 0) {
+            console.log('No consolidated messages to display');
+            return;
+        }
+
+        const welcomeMsg = messagesContainer.querySelector('.welcome-message');
+        if (welcomeMsg && messages.length > 0) {
+            console.log('Hiding welcome message for consolidated view');
+            welcomeMsg.style.opacity = '0';
+            setTimeout(() => welcomeMsg?.remove(), 300);
+        }
+
+        messages.forEach((msg, index) => {
+            console.log(`Processing consolidated message ${index}:`, msg);
+            if (!document.querySelector(`[data-consolidated-id="${msg.id}"]`)) {
+                console.log(`Adding new consolidated message ${msg.id}`);
+                addConsolidatedMessage(msg);
+                conversationContext.push({
+                    type: 'consolidated',
+                    message: msg.message,
+                    mentorName: msg.mentorName,
+                    timestamp: Date.now()
+                });
+            } else {
+                console.log(`Consolidated message ${msg.id} already exists, skipping`);
+            }
+        });
+
         smoothScrollToBottom();
         updateStatus(`${currentMentor.name} is ready to help`);
     }
@@ -185,184 +230,361 @@
                 <span class="message-icon animate-bounce">${icon}</span>
                 <span class="message-title">${typeLabel}</span>
                 <span class="message-timestamp">${timestamp}</span>
-                <button class="message-actions" onclick="toggleMessageActions(${id})">
-                    <span>⋯</span>
-                </button>
+                <button class="message-actions" onclick="toggleMessageActions(${id})">⋯</button>
             </div>
             <div class="message-content">${formatMessageContent(response.message)}</div>
         `;
 
-        // Add interactive suggestions
+        // Enhanced suggestions with confidence scoring
         if (response.suggestions && response.suggestions.length > 0) {
-            html += '<div class="suggestions-container">';
-            html += '<h4>💡 Suggestions:</h4>';
-            html += '<ul class="suggestions-list">';
+            html += '<div class="suggestions-container"><h4>💡 Suggestions:</h4><ul class="suggestions-list">';
             response.suggestions.forEach((suggestion, idx) => {
-                html += `<li class="suggestion-item" onclick="applySuggestion('${escapeHtml(suggestion)}', ${idx})">
-                    <span class="suggestion-text">${escapeHtml(suggestion)}</span>
+                const confidence = suggestion.confidence || 85;
+                const confidenceClass = confidence >= 90 ? 'high' : confidence >= 70 ? 'medium' : 'low';
+                html += `<li class="suggestion-item ${confidenceClass}" onclick="applySuggestion('${escapeHtml(suggestion.text || suggestion)}', ${idx})">
+                    <span class="suggestion-text">${escapeHtml(suggestion.text || suggestion)}</span>
+                    <span class="suggestion-confidence">${confidence}%</span>
                     <span class="suggestion-apply">Apply</span>
                 </li>`;
             });
             html += '</ul></div>';
         }
 
-        // Add interactive warnings
+        // Enhanced warnings with severity levels
         if (response.warnings && response.warnings.length > 0) {
-            html += '<div class="warnings-container">';
-            html += '<h4>⚠️ Warnings:</h4>';
-            html += '<ul class="warnings-list">';
+            html += '<div class="warnings-container"><h4>⚠️ Warnings:</h4><ul class="warnings-list">';
             response.warnings.forEach((warning, idx) => {
-                html += `<li class="warning-item">
-                    <span class="warning-text">${escapeHtml(warning)}</span>
+                const severity = warning.severity || 'medium';
+                html += `<li class="warning-item severity-${severity}">
+                    <span class="warning-text">${escapeHtml(warning.text || warning)}</span>
+                    <span class="warning-severity">${severity.toUpperCase()}</span>
                     <button class="warning-dismiss" onclick="dismissWarning(${id}, ${idx})">Dismiss</button>
                 </li>`;
             });
             html += '</ul></div>';
         }
 
-        // Add enhanced code snippets
-        if (response.codeSnippets && response.codeSnippets.length > 0) {
-            response.codeSnippets.forEach((snippet, idx) => {
-                html += `
-                    <div class="code-snippet-container">
-                        <div class="code-snippet-header">
-                            <span class="code-language">${snippet.language || 'code'}</span>
-                            <button class="copy-code" onclick="copyCodeSnippet(${id}, ${idx})">
-                                📋 Copy
-                            </button>
-                        </div>
-                        <div class="code-snippet">
-                            <pre><code class="language-${snippet.language}">${escapeHtml(snippet.code)}</code></pre>
-                        </div>
-                        ${snippet.explanation ? `<div class="code-explanation">${escapeHtml(snippet.explanation)}</div>` : ''}
-                    </div>
-                `;
-            });
+        // Add proactive analysis data
+        if (response.proactiveAnalysis) {
+            html += addProactiveAnalysisSection(response.proactiveAnalysis);
         }
-
-        // Add message actions menu
-        html += `
-            <div class="message-actions-menu" id="actions-${id}" style="display: none;">
-                <button onclick="copyMessage(${id})">📋 Copy</button>
-                <button onclick="shareMessage(${id})">🔗 Share</button>
-                <button onclick="reportMessage(${id})">🚩 Report</button>
-            </div>
-        `;
 
         messageDiv.innerHTML = html;
         messagesContainer.appendChild(messageDiv);
 
-        // Animate in
         setTimeout(() => {
             messageDiv.style.opacity = '1';
             messageDiv.style.transform = 'translateY(0)';
         }, 100);
 
-        // Add mentor personality flair
         addMentorPersonalityEffects(messageDiv, response.type);
     }
 
-    function getMessageIcon(type) {
-        switch (type) {
-            case 'narration': return '📖';
-            case 'warning': return '⚠️';
-            case 'suggestion': return '💡';
-            case 'explanation': return '🔍';
-            default: return '🤖';
+    function addConsolidatedMessage(msg) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message consolidated priority-${msg.priority}`;
+        messageDiv.setAttribute('data-consolidated-id', msg.id);
+        messageDiv.style.opacity = '0';
+        messageDiv.style.transform = 'translateY(20px)';
+
+        const timestamp = new Date(msg.timestamp).toLocaleTimeString();
+        const analysisTypeIcons = {
+            'pattern': '🔍',
+            'ast': '🌳', 
+            'ai': '🤖'
+        };
+        
+        const analysisTypesHtml = msg.analysisTypes.map(type => 
+            `<span class="analysis-type ${type}" title="${type.toUpperCase()} Analysis">${analysisTypeIcons[type]}</span>`
+        ).join('');
+
+        let html = `
+            <div class="consolidated-message-header">
+                <div class="mentor-info-inline">
+                    <img class="mentor-avatar-small" src="${msg.mentorAvatar}" alt="${msg.mentorName}" onerror="this.src='https://avatars.githubusercontent.com/u/60302907?v=4'" />
+                    <div class="mentor-details-inline">
+                        <span class="mentor-name">${msg.mentorName}</span>
+                        <div class="analysis-types">${analysisTypesHtml}</div>
+                    </div>
+                </div>
+                <div class="message-meta">
+                    <span class="confidence-badge confidence-${msg.confidence >= 0.9 ? 'high' : msg.confidence >= 0.7 ? 'medium' : 'low'}">
+                        ${Math.round(msg.confidence * 100)}%
+                    </span>
+                    <span class="timestamp">${timestamp}</span>
+                    <button class="message-actions" onclick="toggleConsolidatedActions('${msg.id}')">⋯</button>
+                </div>
+            </div>
+            <div class="consolidated-message-content">
+                <div class="main-message">${formatMessageContent(msg.message)}</div>
+        `;
+
+        // Pattern Analysis Section
+        if (msg.patternAnalysis && (msg.patternAnalysis.issues.length > 0 || msg.patternAnalysis.suggestions.length > 0)) {
+            html += `<div class="analysis-section pattern-analysis">
+                <h4><span class="analysis-icon">🔍</span> Pattern Analysis</h4>`;
+            
+            if (msg.patternAnalysis.issues.length > 0) {
+                html += '<div class="issues-list">';
+                msg.patternAnalysis.issues.forEach((issue, idx) => {
+                    html += `<div class="issue-item severity-${issue.severity}">
+                        <span class="issue-type">${issue.type}</span>
+                        <span class="issue-message">${escapeHtml(issue.message)}</span>
+                        ${issue.line ? `<span class="issue-line">Line ${issue.line}</span>` : ''}
+                    </div>`;
+                });
+                html += '</div>';
+            }
+            
+            if (msg.patternAnalysis.suggestions.length > 0) {
+                html += '<div class="pattern-suggestions">';
+                msg.patternAnalysis.suggestions.forEach((suggestion, idx) => {
+                    html += `<div class="suggestion-item pattern" onclick="applySuggestion('${escapeHtml(suggestion)}', ${idx})">
+                        <span class="suggestion-text">${escapeHtml(suggestion)}</span>
+                        <span class="suggestion-apply">Apply</span>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+            
+            html += '</div>';
         }
+
+        // AST Analysis Section
+        if (msg.astAnalysis) {
+            html += `<div class="analysis-section ast-analysis">
+                <h4><span class="analysis-icon">🌳</span> AST Analysis</h4>
+                <div class="ast-metrics">
+                    <div class="metric">
+                        <span class="metric-label">Complexity:</span>
+                        <span class="metric-value complexity-${msg.astAnalysis.complexity < 5 ? 'low' : msg.astAnalysis.complexity < 10 ? 'medium' : 'high'}">${msg.astAnalysis.complexity}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Functions:</span>
+                        <span class="metric-value">${msg.astAnalysis.codeFlow.length}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Variables:</span>
+                        <span class="metric-value">${msg.astAnalysis.dataDependencies.length}</span>
+                    </div>
+                </div>`;
+            
+            if (msg.astAnalysis.issues.length > 0) {
+                html += '<div class="ast-issues">';
+                msg.astAnalysis.issues.forEach((issue, idx) => {
+                    html += `<div class="ast-issue-item">
+                        <span class="issue-type">${issue.type}</span>
+                        <span class="issue-message">${escapeHtml(issue.message)}</span>
+                        <span class="issue-confidence">${Math.round(issue.confidence * 100)}%</span>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+            
+            html += '</div>';
+        }
+
+        // AI Analysis Section
+        if (msg.aiAnalysis && (msg.aiAnalysis.insights.length > 0 || msg.aiAnalysis.suggestions.length > 0 || msg.aiAnalysis.warnings.length > 0)) {
+            html += `<div class="analysis-section ai-analysis">
+                <h4><span class="analysis-icon">🤖</span> AI Analysis</h4>`;
+            
+            if (msg.aiAnalysis.insights.length > 0) {
+                html += '<div class="ai-insights"><h5>💡 Insights:</h5><ul>';
+                msg.aiAnalysis.insights.forEach(insight => {
+                    html += `<li class="insight-item">${escapeHtml(insight)}</li>`;
+                });
+                html += '</ul></div>';
+            }
+            
+            if (msg.aiAnalysis.suggestions.length > 0) {
+                html += '<div class="ai-suggestions"><h5>🔧 AI Suggestions:</h5>';
+                msg.aiAnalysis.suggestions.forEach((suggestion, idx) => {
+                    html += `<div class="suggestion-item ai" onclick="applySuggestion('${escapeHtml(suggestion)}', ${idx})">
+                        <span class="suggestion-text">${escapeHtml(suggestion)}</span>
+                        <span class="suggestion-apply">Apply</span>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+            
+            if (msg.aiAnalysis.warnings.length > 0) {
+                html += '<div class="ai-warnings"><h5>⚠️ Warnings:</h5>';
+                msg.aiAnalysis.warnings.forEach((warning, idx) => {
+                    html += `<div class="warning-item ai">
+                        <span class="warning-text">${escapeHtml(warning)}</span>
+                        <button class="warning-dismiss" onclick="dismissConsolidatedWarning('${msg.id}', ${idx})">Dismiss</button>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+            
+            if (msg.aiAnalysis.codeSnippets && msg.aiAnalysis.codeSnippets.length > 0) {
+                html += '<div class="code-snippets"><h5>📝 Code Examples:</h5>';
+                msg.aiAnalysis.codeSnippets.forEach((snippet, idx) => {
+                    html += `<div class="code-snippet">
+                        <div class="snippet-header">
+                            <span class="snippet-language">${snippet.language}</span>
+                            ${snippet.explanation ? `<span class="snippet-explanation">${escapeHtml(snippet.explanation)}</span>` : ''}
+                        </div>
+                        <pre class="snippet-code"><code class="language-${snippet.language}">${escapeHtml(snippet.code)}</code></pre>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+            
+            html += '</div>';
+        }
+
+        html += '</div>'; // Close consolidated-message-content
+
+        messageDiv.innerHTML = html;
+        messagesContainer.appendChild(messageDiv);
+
+        setTimeout(() => {
+            messageDiv.style.opacity = '1';
+            messageDiv.style.transform = 'translateY(0)';
+        }, 100);
+
+        // Apply mentor personality styling
+        if (msg.mentorId && availableProfiles.length > 0) {
+            const profile = availableProfiles.find(p => p.id === msg.mentorId);
+            if (profile && profile.personality) {
+                messageDiv.classList.add(`mentor-style-${profile.personality.communicationStyle}`);
+            }
+        }
+    }
+
+    function addProactiveAnalysisSection(analysis) {
+        let html = '<div class="proactive-analysis-container">';
+
+        // Issues section
+        if (analysis.issues && analysis.issues.length > 0) {
+            html += '<div class="analysis-section issues-section"><h4>🐛 Potential Issues:</h4><ul class="issues-list">';
+            analysis.issues.forEach((issue, idx) => {
+                const priorityClass = issue.priority === 'critical' ? 'critical' : 
+                                    issue.priority === 'high' ? 'high' : 
+                                    issue.priority === 'medium' ? 'medium' : 'low';
+                html += `<li class="issue-item priority-${priorityClass}">
+                    <span class="issue-type">${issue.type}</span>
+                    <span class="issue-description">${escapeHtml(issue.description)}</span>
+                    <span class="issue-confidence">${issue.confidence}%</span>
+                    ${issue.suggestedFix ? `<div class="issue-fix">${escapeHtml(issue.suggestedFix)}</div>` : ''}
+                </li>`;
+            });
+            html += '</ul></div>';
+        }
+
+        // Performance metrics
+        if (analysis.performance) {
+            html += `<div class="analysis-section performance-section"><h4>⚡ Performance Analysis:</h4>
+                <div class="performance-metrics">
+                    <div class="metric">
+                        <span class="metric-label">Complexity:</span>
+                        <span class="metric-value complexity-${analysis.performance.complexity < 5 ? 'low' : analysis.performance.complexity < 10 ? 'medium' : 'high'}">${analysis.performance.complexity}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Maintainability:</span>
+                        <span class="metric-value">${analysis.performance.maintainability}%</span>
+                    </div>
+                </div></div>`;
+        }
+
+        // Code flow diagram
+        if (analysis.codeFlow) {
+            html += `<div class="analysis-section diagram-section"><h4>📊 Code Flow:</h4>
+                <div class="mermaid-container">
+                    <div class="mermaid">${analysis.codeFlow}</div>
+                </div></div>`;
+        }
+
+        html += '</div>';
+        return html;
+    }
+
+    function addProactiveAnalysisMessage(analysis) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message proactive-analysis';
+        messageDiv.innerHTML = `
+            <div class="message-header">
+                <img class="message-avatar" src="${currentMentor.avatar.startsWith('http') ? currentMentor.avatar : 'https://avatars.githubusercontent.com/u/60302907?v=4'}" alt="${currentMentor.name}" />
+                <span class="message-title">🔍 Proactive Analysis</span>
+                <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
+            </div>
+            ${addProactiveAnalysisSection(analysis)}
+        `;
+        messagesContainer.appendChild(messageDiv);
+        smoothScrollToBottom();
+        updateStatus(`${currentMentor.name} found ${analysis.issues?.length || 0} potential issues`);
+    }
+
+    function applyMentorTheme(personality) {
+        const body = document.body;
+        body.className = body.className.replace(/mentor-theme-\w+/g, '');
+        
+        if (personality) {
+            const style = personality.communicationStyle || 'balanced';
+            body.classList.add(`mentor-theme-${style}`);
+            
+            const root = document.documentElement;
+            switch (style) {
+                case 'direct':
+                    root.style.setProperty('--mentor-accent', '#FF6B6B');
+                    break;
+                case 'supportive':
+                    root.style.setProperty('--mentor-accent', '#4ECDC4');
+                    break;
+                case 'detailed':
+                    root.style.setProperty('--mentor-accent', '#96CEB4');
+                    break;
+                case 'concise':
+                    root.style.setProperty('--mentor-accent', '#A29BFE');
+                    break;
+                default:
+                    root.style.setProperty('--mentor-accent', '#007ACC');
+            }
+        }
+    }
+
+    // Utility functions
+    function getMessageIcon(type) {
+        const icons = {
+            'narration': '📖', 'warning': '⚠️', 'suggestion': '💡', 
+            'explanation': '🔍', 'proactive-analysis': '🔍', 'performance': '⚡', 'diagram': '📊'
+        };
+        return icons[type] || '🤖';
     }
 
     function getTypeLabel(type) {
-        switch (type) {
-            case 'narration': return 'Code Narration';
-            case 'warning': return 'Warning';
-            case 'suggestion': return 'Suggestion';
-            case 'explanation': return 'Explanation';
-            default: return 'AI Mentor';
-        }
-    }
-
-    function clearMessages() {
-        // Remove all messages except welcome
-        const messages = messagesContainer.querySelectorAll('.message');
-        messages.forEach(msg => msg.remove());
-        
-        // Re-add welcome message if no messages
-        if (!messagesContainer.querySelector('.welcome-message')) {
-            messagesContainer.innerHTML = `
-                <div class="welcome-message">
-                    <h3>👋 Welcome to AI Mentor!</h3>
-                    <p>I'm here to help you code better. I'll watch your code changes and provide real-time guidance.</p>
-                    <ul>
-                        <li>🔍 <strong>Real-time Analysis:</strong> I analyze your code as you type</li>
-                        <li>🐛 <strong>Proactive Debugging:</strong> I spot issues before they become problems</li>
-                        <li>📚 <strong>Code Explanation:</strong> I explain what your code does in plain English</li>
-                        <li>🎯 <strong>Best Practices:</strong> I suggest improvements and optimizations</li>
-                    </ul>
-                    <p>Start coding and I'll begin mentoring you!</p>
-                </div>
-            `;
-        }
+        const labels = {
+            'narration': 'Code Narration', 'warning': 'Warning', 'suggestion': 'Suggestion',
+            'explanation': 'Explanation', 'proactive-analysis': 'Proactive Analysis', 
+            'performance': 'Performance Analysis', 'diagram': 'Code Flow'
+        };
+        return labels[type] || 'AI Mentor';
     }
 
     function updateStatus(status) {
         statusText.textContent = status;
-        
         const indicator = document.querySelector('.status-indicator');
-        if (status.includes('error') || status.includes('Error')) {
-            indicator.style.backgroundColor = 'var(--vscode-terminal-ansiRed)';
-        } else if (status.includes('warning') || status.includes('Warning')) {
-            indicator.style.backgroundColor = 'var(--vscode-terminal-ansiYellow)';
-        } else if (status.includes('Analyzing') || status.includes('Processing')) {
-            indicator.style.backgroundColor = 'var(--vscode-terminal-ansiBlue)';
-        } else {
-            indicator.style.backgroundColor = 'var(--vscode-terminal-ansiGreen)';
+        if (indicator) {
+            if (status.includes('error')) indicator.style.backgroundColor = 'var(--vscode-terminal-ansiRed)';
+            else if (status.includes('warning')) indicator.style.backgroundColor = 'var(--vscode-terminal-ansiYellow)';
+            else if (status.includes('Analyzing')) indicator.style.backgroundColor = 'var(--vscode-terminal-ansiBlue)';
+            else indicator.style.backgroundColor = 'var(--vscode-terminal-ansiGreen)';
         }
     }
 
     function updateProfiles(profiles, activeProfileId, activeMentorName) {
-        console.log('=== PROFILE UPDATE ===');
-        console.log('Received profiles:', profiles?.length || 0, 'profiles');
-        console.log('Active profile ID:', activeProfileId);
-        console.log('Active mentor name:', activeMentorName);
-        
-        if (profiles && profiles.length > 0) {
-            console.log('Profile details:');
-            profiles.forEach((profile, index) => {
-                console.log(`  ${index + 1}. ID: ${profile.id}, Name: ${profile.name}`);
-                if (profile.personality) {
-                    console.log(`    - Communication: ${profile.personality.communicationStyle}`);
-                    console.log(`    - Expertise: ${profile.personality.expertise?.join(', ') || 'N/A'}`);
-                    console.log(`    - Focus Areas: ${profile.personality.focusAreas?.join(', ') || 'N/A'}`);
-                }
-                if (profile.githubInsights) {
-                    console.log(`    - GitHub Stats: ${profile.githubInsights.totalRepos} repos, ${profile.githubInsights.totalStars} stars`);
-                    console.log(`    - Primary Languages: ${profile.githubInsights.primaryLanguages?.join(', ') || 'N/A'}`);
-                }
-                if (profile.codeStylePreferences) {
-                    console.log(`    - Code Style: ${profile.codeStylePreferences.indentStyle} indentation, ${profile.codeStylePreferences.maxLineLength} max line length`);
-                }
-                console.log(`    - Full profile:`, profile);
-            });
-        } else {
-            console.log('No profiles received or empty array');
-        }
-        
-        // Store available profiles
         availableProfiles = profiles || [];
         
-        // Update dropdown options
         if (mentorSelect) {
-            // Clear existing options
             mentorSelect.innerHTML = '';
-            
             if (availableProfiles.length === 0) {
                 mentorSelect.innerHTML = '<option value="">No mentor profiles available</option>';
                 mentorSelect.disabled = true;
             } else {
                 mentorSelect.disabled = false;
-                
-                // Add profile options with GitHub avatars
                 availableProfiles.forEach(profile => {
                     const option = document.createElement('option');
                     option.value = profile.id;
@@ -389,61 +611,42 @@
             }
         }
         
-        // Update current mentor state
         if (activeProfileId) {
             const activeProfile = availableProfiles.find(p => p.id === activeProfileId);
             if (activeProfile) {
-                console.log('Setting active mentor:', activeProfile.name, '(ID:', activeProfile.id, ')');
                 currentMentor.id = activeProfile.id;
                 currentMentor.name = activeProfile.name;
-                currentMentor.avatar = activeProfile.avatar || '🤖';
-            } else {
-                console.warn('Active profile ID not found in available profiles:', activeProfileId);
+                currentMentor.avatar = activeProfile.avatar || 'https://avatars.githubusercontent.com/u/60302907?v=4';
+                currentMentor.personality = activeProfile.personality;
+                
+                if (mentorAvatar && activeProfile) {
+                    const avatarUrl = activeProfile.githubUsername 
+                        ? `https://avatars.githubusercontent.com/${activeProfile.githubUsername}?v=4`
+                        : activeProfile.avatar || 'https://avatars.githubusercontent.com/u/60302907?v=4';
+                    mentorAvatar.src = avatarUrl;
+                    mentorAvatar.alt = `${activeProfile.name} Avatar`;
+                }
+                applyMentorTheme(activeProfile.personality);
             }
-        } else {
-            console.log('No active profile ID provided');
         }
-        
-        // Update mentor name display
-        const displayName = activeMentorName || currentMentor.name;
-        console.log('Updating display name to:', displayName);
-        updateMentorName(displayName);
-        console.log('=== END PROFILE UPDATE ===');
-    }
-
-    function getMentorName(mentorId) {
-        if (!mentorId) return 'AI Mentor';
-        
-        const profile = availableProfiles.find(p => p.id === mentorId);
-        return profile ? profile.name : 'AI Mentor';
+        updateMentorName(activeMentorName || currentMentor.name);
     }
 
     function updateMentorName(mentorName) {
         console.log('Updating mentor name to:', mentorName);
         
-        // Always update the header to show the active mentor with profile photo
+        // Update only the header title text, not the avatar (avatar is handled separately)
         const headerElement = document.querySelector('#mentorTitle');
         if (headerElement) {
-            const activeProfile = availableProfiles.find(p => p.id === currentMentor.id);
-            if (activeProfile && activeProfile.githubUsername) {
-                const avatarUrl = `https://github.com/${activeProfile.githubUsername}.png?size=32`;
-                headerElement.innerHTML = `<img src="${avatarUrl}" class="mentor-avatar-img" alt="${mentorName}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';"> <span class="fallback-avatar" style="display:none;">🤖</span> ${mentorName || 'AI Mentor'}`;
-            } else {
-                headerElement.textContent = `🤖 ${mentorName || 'AI Mentor'}`;
-            }
+            headerElement.textContent = mentorName || 'AI Mentor';
         }
         
-        // Update welcome message if it exists
         const welcomeMessage = document.querySelector('.welcome-message h3');
         if (welcomeMessage) {
-            if (availableProfiles.length > 0) {
-                welcomeMessage.textContent = `👋 Welcome! I'm ${mentorName || 'AI Mentor'}`;
-            } else {
-                welcomeMessage.textContent = '👋 Welcome to AI Mentor!';
-            }
+            welcomeMessage.textContent = availableProfiles.length > 0 
+                ? `👋 Welcome! I'm ${mentorName || 'AI Mentor'}`
+                : '👋 Welcome to AI Mentor!';
         }
-        
-        // Update status to show active mentor
         updateStatus(`${mentorName || 'AI Mentor'} is ready to help`);
     }
 
@@ -451,6 +654,28 @@
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    function formatMessageContent(content) {
+        return content
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/`(.*?)`/g, '<code>$1</code>')
+            .replace(/\n/g, '<br>');
+    }
+
+    function smoothScrollToBottom() {
+        messagesContainer.scrollTo({
+            top: messagesContainer.scrollHeight,
+            behavior: 'smooth'
+        });
+    }
+
+    function addMentorPersonalityEffects(messageDiv, type) {
+        if (currentMentor.personality) {
+            const style = currentMentor.personality.communicationStyle;
+            messageDiv.classList.add(`mentor-style-${style}`);
+        }
     }
 
     // Enhanced utility functions
@@ -522,111 +747,118 @@
             </div>
         `;
         messagesContainer.appendChild(typingIndicator);
+        typingIndicator.style.display = 'block';
         smoothScrollToBottom();
     }
 
     function hideTypingIndicator() {
         if (typingIndicator) {
-            typingIndicator.style.opacity = '0';
-            setTimeout(() => {
-                if (typingIndicator) {
-                    typingIndicator.remove();
-                    typingIndicator = null;
-                }
-            }, 300);
+            typingIndicator.remove();
+            typingIndicator = null;
         }
     }
 
-    function showMentorTransition(fromId, toId) {
-        const transitionDiv = document.createElement('div');
-        transitionDiv.className = 'mentor-transition';
-        transitionDiv.innerHTML = `
-            <div class="transition-content">
-                <span class="transition-from">${getMentorAvatar(fromId)}</span>
-                <span class="transition-arrow">→</span>
-                <span class="transition-to">${getMentorAvatar(toId)}</span>
-            </div>
-        `;
-        messagesContainer.appendChild(transitionDiv);
+    function clearMessages() {
+        const messages = messagesContainer.querySelectorAll('.message');
+        messages.forEach(msg => msg.remove());
+        conversationContext = [];
+    }
+
+    function showMentorReaction(type) {
+        // Add visual feedback for mentor actions
+        const reaction = document.createElement('div');
+        reaction.className = `mentor-reaction ${type}`;
+        reaction.textContent = type === 'reset' ? '🔄' : '👋';
+        document.body.appendChild(reaction);
         
         setTimeout(() => {
-            transitionDiv.style.opacity = '0';
-            setTimeout(() => transitionDiv.remove(), 300);
+            reaction.remove();
         }, 2000);
+    }
+
+    function showMentorTransition(fromId, toId) {
+        addSystemMessage(`Switching from ${fromId} to ${toId}...`);
+    }
+
+    function showVoiceIndicator(enabled) {
+        const indicator = document.querySelector('.voice-indicator');
+        if (indicator) {
+            indicator.style.display = enabled ? 'block' : 'none';
+        }
+    }
+
+    function updateMentorMood(mood) {
+        mentorMood = mood;
+        document.body.setAttribute('data-mentor-mood', mood);
+    }
+
+    function addHoverSuggestionMessage(suggestion) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message hover-suggestion';
+        messageDiv.innerHTML = `
+            <div class="message-header">
+                <span class="message-icon">💡</span>
+                <span class="message-title">Hover Suggestion</span>
+                <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
+            </div>
+            <div class="message-content">${suggestion}</div>
+        `;
+        messagesContainer.appendChild(messageDiv);
+        smoothScrollToBottom();
+    }
+
+    function addCodeFlowDiagram(diagram) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message diagram';
+        messageDiv.innerHTML = `
+            <div class="message-header">
+                <span class="message-icon">📊</span>
+                <span class="message-title">Code Flow Diagram</span>
+                <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
+            </div>
+            <div class="message-content">
+                <div class="mermaid">${diagram}</div>
+            </div>
+        `;
+        messagesContainer.appendChild(messageDiv);
+        
+        if (mermaidLoaded) {
+            mermaid.init(undefined, messageDiv.querySelector('.mermaid'));
+        }
         
         smoothScrollToBottom();
     }
 
-    function showMentorReaction(type) {
-        const reactions = {
-            'reset': '🔄 Conversation cleared!',
-            'error': '😅 Oops, something went wrong!',
-            'success': '✅ Great job!',
-            'thinking': '🤔 Let me think about this...'
-        };
-        
-        const reaction = reactions[type] || reactions['thinking'];
-        addSystemMessage(reaction);
+    function addPerformanceMetrics(metrics) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message performance';
+        messageDiv.innerHTML = `
+            <div class="message-header">
+                <span class="message-icon">⚡</span>
+                <span class="message-title">Performance Metrics</span>
+                <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
+            </div>
+            <div class="message-content">
+                <div class="metrics-grid">
+                    ${Object.entries(metrics).map(([key, value]) => 
+                        `<div class="metric"><span class="metric-label">${key}:</span><span class="metric-value">${value}</span></div>`
+                    ).join('')}
+                </div>
+            </div>
+        `;
+        messagesContainer.appendChild(messageDiv);
+        smoothScrollToBottom();
     }
 
-    function smoothScrollToBottom() {
-        messagesContainer.scrollTo({
-            top: messagesContainer.scrollHeight,
-            behavior: 'smooth'
-        });
-    }
-
-    function formatMessageContent(content) {
-        // Enhanced message formatting with markdown-like support
-        return content
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.*?)\*/g, '<em>$1</em>')
-            .replace(/`(.*?)`/g, '<code>$1</code>')
-            .replace(/\n/g, '<br>');
-    }
-
-    function addMentorPersonalityEffects(messageDiv, type) {
-        // Add personality-specific visual effects
-        switch (currentMentor.id) {
-            case 'marcus':
-                if (type === 'warning') {
-                    messageDiv.classList.add('marcus-harsh');
-                }
-                break;
-            case 'sophia':
-                messageDiv.classList.add('sophia-witty');
-                break;
-            case 'alex':
-                messageDiv.classList.add('alex-positive');
-                if (type === 'suggestion') {
-                    messageDiv.classList.add('alex-excited');
-                }
-                break;
-        }
-    }
-
-    // Interactive functions for enhanced UI
+    // Interactive functions
     window.toggleMessageActions = function(id) {
         const menu = document.getElementById(`actions-${id}`);
-        if (menu) {
-            menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
-        }
+        if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
     };
 
-    window.applySuggestion = function(suggestion, idx) {
-        // Apply suggestion to code input
-        codeInput.value = suggestion;
-        codeInput.focus();
-        
-        // Show feedback
-        updateStatus(`Applied suggestion: ${suggestion.substring(0, 50)}...`);
-        
-        // Send analytics
-        vscode.postMessage({
-            type: 'suggestionApplied',
-            suggestion: suggestion,
-            index: idx
-        });
+    window.toggleConsolidatedActions = function(id) {
+        const menu = document.getElementById(`consolidated-actions-${id}`);
+        if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
     };
 
     window.dismissWarning = function(messageId, warningIdx) {
@@ -637,109 +869,8 @@
         }
     };
 
-    window.copyCodeSnippet = function(messageId, snippetIdx) {
-        const snippet = document.querySelector(`[data-message-id="${messageId}"] .code-snippet:nth-child(${snippetIdx + 1}) code`);
-        if (snippet) {
-            navigator.clipboard.writeText(snippet.textContent).then(() => {
-                updateStatus('Code copied to clipboard!');
-            });
-        }
-    };
-
-    window.copyMessage = function(id) {
-        const message = document.querySelector(`[data-message-id="${id}"] .message-content`);
-        if (message) {
-            navigator.clipboard.writeText(message.textContent).then(() => {
-                updateStatus('Message copied to clipboard!');
-            });
-        }
-    };
-
-    window.shareMessage = function(id) {
-        const message = document.querySelector(`[data-message-id="${id}"] .message-content`);
-        if (message && navigator.share) {
-            navigator.share({
-                title: 'AI Mentor Advice',
-                text: message.textContent
-            });
-        }
-    };
-
-    window.reportMessage = function(id) {
-        vscode.postMessage({
-            type: 'reportMessage',
-            messageId: id
-        });
-        updateStatus('Message reported. Thank you for your feedback!');
-    };
-
-    function showVoiceIndicator(enabled) {
-        const indicator = document.createElement('div');
-        indicator.className = 'voice-indicator';
-        indicator.innerHTML = enabled ? '🎤 Voice enabled' : '🔇 Voice disabled';
-        indicator.style.cssText = `
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            background: var(--vscode-badge-background);
-            color: var(--vscode-badge-foreground);
-            padding: 8px 12px;
-            border-radius: 4px;
-            z-index: 1000;
-            opacity: 0;
-            transition: opacity 0.3s;
-        `;
-        
-        document.body.appendChild(indicator);
-        setTimeout(() => indicator.style.opacity = '1', 100);
-        setTimeout(() => {
-            indicator.style.opacity = '0';
-            setTimeout(() => indicator.remove(), 300);
-        }, 3000);
-    }
-
-    function updateMentorMood(mood) {
-        mentorMood = mood;
-        const header = document.querySelector('#mentorTitle');
-        if (header) {
-            header.className = `mentor-mood-${mood}`;
-        }
-    }
-
-    // Enhanced keyboard shortcuts
-    document.addEventListener('keydown', (e) => {
-        if (e.ctrlKey || e.metaKey) {
-            switch (e.key) {
-                case 'k':
-                    e.preventDefault();
-                    clearMessages();
-                    break;
-                case 'Enter':
-                    if (e.shiftKey) {
-                        e.preventDefault();
-                        explainBtn.click();
-                    }
-                    break;
-                case '/':
-                    e.preventDefault();
-                    codeInput.focus();
-                    break;
-                case 'Escape':
-                    e.preventDefault();
-                    hideTypingIndicator(); // Emergency stop for stuck indicators
-                    updateStatus(`${currentMentor.name} is ready to help`);
-                    break;
-            }
-        }
-    });
-
-    // Auto-resize textarea
-    codeInput.addEventListener('input', function() {
-        this.style.height = 'auto';
-        this.style.height = Math.min(this.scrollHeight, 200) + 'px';
-    });
-
-    // Initialize enhanced features
+    // Initialize
+    loadMermaid();
     updateMentorName('AI Mentor');
     updateStatus('AI Mentor is ready to help');
     

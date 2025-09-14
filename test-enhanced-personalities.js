@@ -46,7 +46,7 @@ async function testEnhancedPersonalities() {
     for (const profile of testProfiles) {
         console.log(`\n🔍 Testing ${profile.username} personality:`);
         console.log(`Expected style: ${profile.expectedStyle}`);
-        console.log(`Test code: ${profile.testCode}`);
+        console.log(`Test coding: ${profile.testCode}`);
         
         try {
             // Create GitHub-based profile

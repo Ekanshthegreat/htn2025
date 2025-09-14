@@ -5,6 +5,7 @@ import { GeminiService } from './geminiService';
 export interface GitHubUser {
     login: string;
     name: string;
+    email?: string | null;
     avatar_url: string;
     bio: string;
     public_repos: number;
@@ -555,7 +556,8 @@ export class GitHubService {
 
     public async createProfileFromGitHub(
         username: string, 
-        customName?: string
+        customName?: string,
+        manualEmail?: string
     ): Promise<Partial<MentorProfile>> {
         try {
             console.log(`Creating profile from GitHub for: ${username}`);
@@ -569,9 +571,10 @@ export class GitHubService {
             const prompts = await this.generatePrompts(username, analysis);
             console.log(`Generated prompts:`, prompts);
 
-            const profile = {
+            const profile: Partial<MentorProfile> = {
                 name: customName || user.name || username,
                 githubUsername: username,
+                contactEmail: manualEmail || user.email,
                 avatar: user.avatar_url,
                 personality: {
                     ...analysis.personality,

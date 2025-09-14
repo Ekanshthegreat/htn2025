@@ -16,7 +16,8 @@
     "onLanguage:typescript",
     "onLanguage:python",
     "onLanguage:java",
-    "onLanguage:cpp"
+    "onLanguage:cpp",
+    "onCommand:aiMentor.sendSummary"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -50,6 +51,21 @@
         "command": "aiMentor.manageProfiles",
         "title": "⚙️ Manage Profiles",
         "category": "AI Mentor"
+      },
+      {
+        "command": "aiMentor.analyzeCode",
+        "title": "🔍 Analyze Code with AI",
+        "category": "AI Mentor"
+      },
+      {
+        "command": "aiMentor.sendSummary",
+        "title": "📧 Send Interaction Summary",
+        "category": "AI Mentor"
+      },
+      {
+        "command": "aiMentor.configureEmail",
+        "title": "⚙️ Configure Email Settings",
+        "category": "AI Mentor"
       }
     ],
     "views": {
@@ -75,17 +91,16 @@
       "properties": {
         "aiMentor.llmProvider": {
           "type": "string",
-          "default": "gemini",
           "enum": [
             "gemini",
-            "openai",
-            "anthropic"
+            "openai"
           ],
-          "description": "LLM provider to use for AI mentor"
+          "default": "gemini",
+          "description": "LLM provider to use for AI analysis"
         },
         "aiMentor.apiKey": {
           "type": "string",
-          "description": "API key for the selected LLM provider"
+          "description": "API key for the selected LLM provider (Gemini or OpenAI)"
         },
         "aiMentor.githubToken": {
           "type": "string",
@@ -132,6 +147,33 @@
         "aiMentor.activeProfile": {
           "type": "string",
           "description": "Currently active mentor profile ID"
+        },
+        "aiMentor.smtpHost": {
+          "type": "string",
+          "description": "SMTP host for sending emails (e.g., smtp.gmail.com)"
+        },
+        "aiMentor.smtpPort": {
+          "type": "number",
+          "default": 587,
+          "description": "SMTP port (587 for TLS, 465 for SSL)"
+        },
+        "aiMentor.smtpSecure": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use SSL (true for port 465, false for TLS on 587)"
+        },
+        "aiMentor.smtpUser": {
+          "type": "string",
+          "description": "SMTP username (email account)"
+        },
+        "aiMentor.smtpPass": {
+          "type": "string",
+          "description": "SMTP password or app password"
+        },
+        "aiMentor.smtpFrom": {
+          "type": "string",
+          "default": "\"AI Mentor Platform\" <noreply@ai-mentor.com>",
+          "description": "From header for outgoing emails"
         }
       }
     }
@@ -143,6 +185,7 @@
   },
   "devDependencies": {
     "@types/node": "16.x",
+    "@types/nodemailer": "^7.0.1",
     "@types/vscode": "^1.74.0",
     "@types/ws": "^8.5.0",
     "typescript": "^4.9.4"

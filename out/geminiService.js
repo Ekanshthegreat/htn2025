@@ -57,12 +57,12 @@ class GeminiService {
             vscode.window.showErrorMessage('Failed to initialize Gemini API');
         }
     }
-    async sendMessage(message) {
+    async sendMessage(message, profileManager) {
         if (!this.model) {
             return null;
         }
         try {
-            const prompt = this.buildAdvancedPrompt(message);
+            const prompt = this.buildAdvancedPrompt(message, profileManager);
             const chat = this.model.startChat({
                 history: this.conversationHistory,
                 generationConfig: {
@@ -155,8 +155,44 @@ Return JSON in this exact format:
             return null;
         }
     }
-    buildAdvancedPrompt(message) {
-        const systemContext = `You are an advanced AI programming mentor powered by Google Gemini. You're designed to revolutionize the developer experience by providing:
+    buildAdvancedPrompt(message, profileManager) {
+        // Get active mentor profile for personalization
+        const activeProfile = profileManager?.getActiveProfile();
+        let systemContext;
+        if (activeProfile) {
+            const mentorName = activeProfile.name;
+            const communicationStyle = activeProfile.personality?.communicationStyle || 'supportive';
+            const expertise = activeProfile.personality?.expertise || [];
+            const feedbackApproach = activeProfile.personality?.feedbackApproach || 'balanced';
+            systemContext = `You are ${mentorName}, acting as a programming mentor based on your GitHub profile analysis.
+
+**Your Personality:**
+- Communication Style: ${communicationStyle}
+- Technical Expertise: ${expertise.join(', ')}
+- Feedback Approach: ${feedbackApproach}
+- GitHub Username: ${activeProfile.githubUsername}
+
+**Your Role:**
+Provide personalized code guidance that reflects your authentic coding style and expertise from your GitHub profile. Adapt your communication to match your natural style:
+- If direct: Be concise and to-the-point
+- If supportive: Be encouraging and helpful
+- If detailed: Provide comprehensive explanations
+
+Your responses should be formatted as JSON with this structure:
+{
+  "message": "Primary explanation in your authentic voice and style",
+  "insights": ["Technical insights based on your expertise"],
+  "predictions": ["Potential issues you'd anticipate"],
+  "suggestions": ["Recommendations in your style"],
+  "warnings": ["Important alerts you'd give"],
+  "codeSnippets": [{"language": "js", "code": "example", "explanation": "why this helps"}],
+  "type": "narration|warning|suggestion|explanation|insight",
+  "confidence": 0.95,
+  "learningOpportunity": "What the developer can learn from this"
+}`;
+        }
+        else {
+            systemContext = `You are an advanced AI programming mentor powered by Google Gemini. You're designed to revolutionize the developer experience by providing:
 
 1. **Proactive Code Intelligence**: Analyze code patterns and predict potential issues before they occur
 2. **Natural Language Code Narration**: Explain complex code flows in conversational, easy-to-understand language
@@ -176,6 +212,7 @@ Your responses should be formatted as JSON with this structure:
   "confidence": 0.95,
   "learningOpportunity": "What the developer can learn from this"
 }`;
+        }
         switch (message.type) {
             case 'code_changed':
                 return `${systemContext}
@@ -268,6 +305,29 @@ Provide advanced project analysis:
 - Best practices for this file type/pattern
 - Potential future development directions
 - Code organization and structure recommendations`;
+            case 'code_analysis':
+                const mentorContext = activeProfile ?
+                    `As ${activeProfile.name}, analyze this code using your GitHub expertise in ${activeProfile.personality?.expertise?.join(', ') || 'programming'}.` :
+                    'Analyze this code with comprehensive insights.';
+                return `${systemContext}
+
+${mentorContext}
+
+**Code to Analyze:**
+\`\`\`${message.language}
+${message.code}
+\`\`\`
+
+**Technical Analysis:**
+${JSON.stringify(message.analysis, null, 2)}
+
+Provide analysis that reflects your authentic style:
+- Code quality assessment based on your standards
+- Performance insights from your experience
+- Security considerations you'd prioritize
+- Maintainability suggestions in your voice
+- Potential improvements you'd recommend
+- Learning opportunities you'd highlight`;
             default:
                 return `${systemContext}
 

@@ -10,6 +10,8 @@ import { ProfileManager } from './profileManager';
 import { GitHubService } from './githubService';
 import { GenesysService } from './genesysService';
 import { MentorHoverProvider } from './hoverProvider';
+import { notificationService } from './notificationService';
+import { interactionTracker } from './interactionTracker';
 
 let aiMentorProvider: AIMentorProvider;
 let codeWatcher: CodeWatcher;
@@ -35,7 +37,7 @@ export function activate(context: vscode.ExtensionContext) {
     voiceService = new VoiceService();
     graphiteService = new GraphiteService();
     realtimeAnalyzer = new RealtimeAnalyzer(llmService, voiceService, profileManager);
-    codeWatcher = new CodeWatcher(astAnalyzer, llmService);
+    codeWatcher = new CodeWatcher(astAnalyzer, llmService, profileManager);
     aiMentorProvider = new AIMentorProvider(context.extensionUri, codeWatcher, llmService, profileManager);
     hoverProvider = new MentorHoverProvider(profileManager, astAnalyzer);
     
@@ -144,10 +146,15 @@ export function activate(context: vscode.ExtensionContext) {
 
         if (!githubUsername) return;
 
+        const email = await vscode.window.showInputBox({
+            prompt: 'Enter contact email for the mentor (optional)',
+            placeHolder: 'e.g., mentor@example.com'
+        });
+
         try {
             vscode.window.showInformationMessage(`🔍 Analyzing GitHub profile: ${githubUsername}...`);
             
-            const mentorProfile = await profileManager.createMentorFromGitHub(githubUsername);
+            const mentorProfile = await profileManager.createMentorFromGitHub(githubUsername, email || undefined);
             
             vscode.window.showInformationMessage(
                 `✅ Created GitHub-based mentor: ${mentorProfile.name}!`,
@@ -257,6 +264,55 @@ export function activate(context: vscode.ExtensionContext) {
         }
     }
     
+    const analyzeCodeCommand = vscode.commands.registerCommand('aiMentor.analyzeCode', () => {
+        aiMentorProvider.addCodeAnalysis();
+        vscode.window.showInformationMessage('Analyzing your code with AI...');
+    });
+
+    const sendSummaryCommand = vscode.commands.registerCommand('aiMentor.sendSummary', async () => {
+        const activeProfile = profileManager.getActiveProfile();
+
+        if (!activeProfile) {
+            vscode.window.showWarningMessage('No active mentor profile. Cannot send summary.');
+            return;
+        }
+
+        if (!activeProfile.contactEmail) {
+            vscode.window.showWarningMessage(`Mentor profile '${activeProfile.name}' does not have a contact email configured.`);
+            return;
+        }
+
+        const summary = interactionTracker.generateSummary(activeProfile.id);
+        if (summary.includes('No interactions recorded')) {
+            vscode.window.showInformationMessage('No interactions to summarize for the current session.');
+            return;
+        }
+
+        vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: `Sending interaction summary to ${activeProfile.name}...`,
+            cancellable: false
+        }, async (progress) => {
+            const html = interactionTracker.generateSummaryHtml(activeProfile.id, activeProfile.name);
+            const previewUrl = await notificationService.sendSummaryRich(activeProfile.contactEmail!, html, activeProfile.name);
+
+            if (previewUrl) {
+                if (previewUrl === 'success') {
+                    vscode.window.showInformationMessage(`✅ Summary sent successfully to ${activeProfile.contactEmail}!`);
+                } else {
+                    vscode.window.showInformationMessage(`Summary sent! Preview it here: ${previewUrl}`, 'Open Preview').then(choice => {
+                        if (choice === 'Open Preview') {
+                            vscode.env.openExternal(vscode.Uri.parse(previewUrl));
+                        }
+                    });
+                }
+                interactionTracker.clearInteractionsForMentor(activeProfile.id);
+            } else {
+                vscode.window.showErrorMessage('Failed to send summary email. Check the console for details.');
+            }
+        });
+    });
+
     async function handleProfileSwitch(profiles: any[], activeProfile: any, profileManager: any, aiMentorProvider: any) {
         const switchItems = profiles.map(profile => ({
             label: profile.name,
@@ -277,6 +333,26 @@ export function activate(context: vscode.ExtensionContext) {
         }
     }
 
+    const configureEmailCommand = vscode.commands.registerCommand('aiMentor.configureEmail', async () => {
+        // Auto-configure with provided credentials
+        const email = 'kevkolyakov@gmail.com';
+        const appPassword = 'ecia zhoz abwp disi';
+
+        // Update VS Code settings
+        const config = vscode.workspace.getConfiguration('aiMentor');
+        await config.update('smtpHost', 'smtp.gmail.com', vscode.ConfigurationTarget.Global);
+        await config.update('smtpPort', 587, vscode.ConfigurationTarget.Global);
+        await config.update('smtpSecure', false, vscode.ConfigurationTarget.Global);
+        await config.update('smtpUser', email, vscode.ConfigurationTarget.Global);
+        await config.update('smtpPass', appPassword, vscode.ConfigurationTarget.Global);
+        await config.update('smtpFrom', `"AI Mentor" <${email}>`, vscode.ConfigurationTarget.Global);
+
+        vscode.window.showInformationMessage('✅ Gmail SMTP configured! Emails will now be sent to real recipients.');
+        
+        // Force recreate the transporter with new settings
+        notificationService.setupTransporter();
+    });
+
     context.subscriptions.push(
         activateCommand,
         deactivateCommand,
@@ -284,7 +360,10 @@ export function activate(context: vscode.ExtensionContext) {
         traceExecutionCommand,
         selectProfileCommand,
         createGitHubMentorCommand,
-        manageProfilesCommand
+        manageProfilesCommand,
+        analyzeCodeCommand,
+        sendSummaryCommand,
+        configureEmailCommand
     );
     
     // Add logging for profile manager initialization
