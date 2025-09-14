@@ -47,14 +47,6 @@ body {
     gap: 8px;
 }
 
-.mentor-avatar-img {
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    border: 2px solid var(--vscode-button-background);
-    background-color: var(--vscode-input-background);
-}
-
 .typing-avatar {
     width: 20px;
     height: 20px;

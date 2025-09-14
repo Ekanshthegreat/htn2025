@@ -297,11 +297,15 @@ export function activate(context: vscode.ExtensionContext) {
             const previewUrl = await notificationService.sendSummaryRich(activeProfile.contactEmail!, html, activeProfile.name);
 
             if (previewUrl) {
-                vscode.window.showInformationMessage(`Summary sent! Preview it here: ${previewUrl}`, 'Open Preview').then(choice => {
-                    if (choice === 'Open Preview') {
-                        vscode.env.openExternal(vscode.Uri.parse(previewUrl));
-                    }
-                });
+                if (previewUrl === 'success') {
+                    vscode.window.showInformationMessage(`✅ Summary sent successfully to ${activeProfile.contactEmail}!`);
+                } else {
+                    vscode.window.showInformationMessage(`Summary sent! Preview it here: ${previewUrl}`, 'Open Preview').then(choice => {
+                        if (choice === 'Open Preview') {
+                            vscode.env.openExternal(vscode.Uri.parse(previewUrl));
+                        }
+                    });
+                }
                 interactionTracker.clearInteractionsForMentor(activeProfile.id);
             } else {
                 vscode.window.showErrorMessage('Failed to send summary email. Check the console for details.');
@@ -329,6 +333,26 @@ export function activate(context: vscode.ExtensionContext) {
         }
     }
 
+    const configureEmailCommand = vscode.commands.registerCommand('aiMentor.configureEmail', async () => {
+        // Auto-configure with provided credentials
+        const email = 'kevkolyakov@gmail.com';
+        const appPassword = 'ecia zhoz abwp disi';
+
+        // Update VS Code settings
+        const config = vscode.workspace.getConfiguration('aiMentor');
+        await config.update('smtpHost', 'smtp.gmail.com', vscode.ConfigurationTarget.Global);
+        await config.update('smtpPort', 587, vscode.ConfigurationTarget.Global);
+        await config.update('smtpSecure', false, vscode.ConfigurationTarget.Global);
+        await config.update('smtpUser', email, vscode.ConfigurationTarget.Global);
+        await config.update('smtpPass', appPassword, vscode.ConfigurationTarget.Global);
+        await config.update('smtpFrom', `"AI Mentor" <${email}>`, vscode.ConfigurationTarget.Global);
+
+        vscode.window.showInformationMessage('✅ Gmail SMTP configured! Emails will now be sent to real recipients.');
+        
+        // Force recreate the transporter with new settings
+        notificationService.setupTransporter();
+    });
+
     context.subscriptions.push(
         activateCommand,
         deactivateCommand,
@@ -337,8 +361,13 @@ export function activate(context: vscode.ExtensionContext) {
         selectProfileCommand,
         createGitHubMentorCommand,
         manageProfilesCommand,
+<<<<<<< HEAD
         analyzeCodeCommand,
         sendSummaryCommand
+=======
+        sendSummaryCommand,
+        configureEmailCommand
+>>>>>>> 3cdb176dd866ded330bdd09b70f8f548eeaf06a5
     );
     
     // Add logging for profile manager initialization

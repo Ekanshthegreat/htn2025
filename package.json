@@ -61,6 +61,11 @@
         "command": "aiMentor.sendSummary",
         "title": "📧 Send Interaction Summary",
         "category": "AI Mentor"
+      },
+      {
+        "command": "aiMentor.configureEmail",
+        "title": "⚙️ Configure Email Settings",
+        "category": "AI Mentor"
       }
     ],
     "views": {
@@ -138,6 +143,33 @@
         "aiMentor.activeProfile": {
           "type": "string",
           "description": "Currently active mentor profile ID"
+        },
+        "aiMentor.smtpHost": {
+          "type": "string",
+          "description": "SMTP host for sending emails (e.g., smtp.gmail.com)"
+        },
+        "aiMentor.smtpPort": {
+          "type": "number",
+          "default": 587,
+          "description": "SMTP port (587 for TLS, 465 for SSL)"
+        },
+        "aiMentor.smtpSecure": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use SSL (true for port 465, false for TLS on 587)"
+        },
+        "aiMentor.smtpUser": {
+          "type": "string",
+          "description": "SMTP username (email account)"
+        },
+        "aiMentor.smtpPass": {
+          "type": "string",
+          "description": "SMTP password or app password"
+        },
+        "aiMentor.smtpFrom": {
+          "type": "string",
+          "default": "\"AI Mentor Platform\" <noreply@ai-mentor.com>",
+          "description": "From header for outgoing emails"
         }
       }
     }
