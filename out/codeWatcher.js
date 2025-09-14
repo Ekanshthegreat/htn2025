@@ -112,8 +112,8 @@ class CodeWatcher {
     }
     async handleTextChange(document, changes) {
         const currentContent = document.getText();
-        const previousContent = this.previousContent.get(document.uri.toString()) || '';
-        if (previousContent !== currentContent) {
+        const previousContent = this.previousContent.get(document.uri.toString());
+        if (previousContent && previousContent !== currentContent) {
             await this.analyzeChanges(document, previousContent, currentContent);
         }
         this.previousContent.set(document.uri.toString(), currentContent);
