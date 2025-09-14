@@ -428,7 +428,6 @@
                 headerElement.textContent = `🤖 ${mentorName || 'AI Mentor'}`;
             }
         }
-        if (headerElement) headerElement.textContent = mentorName || 'AI Mentor';
         
         const welcomeMessage = document.querySelector('.welcome-message h3');
         if (welcomeMessage) {
@@ -467,7 +466,6 @@
         }
     }
 
-    // Typing indicator functions
     // Enhanced utility functions
     function getMentorAvatar(mentorId) {
         if (!mentorId) return '🤖';
@@ -529,26 +527,22 @@
             <div class="typing-content">
                 ${avatarHtml}
                 <span class="typing-text">${currentMentor.name} is thinking...</span>
-        if (!typingIndicator) {
-            typingIndicator = document.createElement('div');
-            typingIndicator.className = 'typing-indicator';
-            typingIndicator.innerHTML = `
                 <div class="typing-dots">
                     <span></span>
                     <span></span>
                     <span></span>
                 </div>
-                <span class="typing-text">${currentMentor.name} is thinking...</span>
-            `;
-            messagesContainer.appendChild(typingIndicator);
-        }
+            </div>
+        `;
+        messagesContainer.appendChild(typingIndicator);
         typingIndicator.style.display = 'block';
         smoothScrollToBottom();
     }
 
     function hideTypingIndicator() {
         if (typingIndicator) {
-            typingIndicator.style.display = 'none';
+            typingIndicator.remove();
+            typingIndicator = null;
         }
     }
 
@@ -556,21 +550,6 @@
         const messages = messagesContainer.querySelectorAll('.message');
         messages.forEach(msg => msg.remove());
         conversationContext = [];
-    }
-
-    function addSystemMessage(message) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message system';
-        messageDiv.innerHTML = `
-            <div class="message-header">
-                <span class="message-icon">🔄</span>
-                <span class="message-title">System</span>
-                <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
-            </div>
-            <div class="message-content">${message}</div>
-        `;
-        messagesContainer.appendChild(messageDiv);
-        smoothScrollToBottom();
     }
 
     function showMentorReaction(type) {
