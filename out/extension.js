@@ -261,11 +261,16 @@ function activate(context) {
             const html = interactionTracker_1.interactionTracker.generateSummaryHtml(activeProfile.id, activeProfile.name);
             const previewUrl = await notificationService_1.notificationService.sendSummaryRich(activeProfile.contactEmail, html, activeProfile.name);
             if (previewUrl) {
-                vscode.window.showInformationMessage(`Summary sent! Preview it here: ${previewUrl}`, 'Open Preview').then(choice => {
-                    if (choice === 'Open Preview') {
-                        vscode.env.openExternal(vscode.Uri.parse(previewUrl));
-                    }
-                });
+                if (previewUrl === 'success') {
+                    vscode.window.showInformationMessage(`✅ Summary sent successfully to ${activeProfile.contactEmail}!`);
+                }
+                else {
+                    vscode.window.showInformationMessage(`Summary sent! Preview it here: ${previewUrl}`, 'Open Preview').then(choice => {
+                        if (choice === 'Open Preview') {
+                            vscode.env.openExternal(vscode.Uri.parse(previewUrl));
+                        }
+                    });
+                }
                 interactionTracker_1.interactionTracker.clearInteractionsForMentor(activeProfile.id);
             }
             else {
@@ -290,7 +295,23 @@ function activate(context) {
             aiMentorProvider.updateWebview();
         }
     }
-    context.subscriptions.push(activateCommand, deactivateCommand, startDebuggingCommand, traceExecutionCommand, selectProfileCommand, createGitHubMentorCommand, manageProfilesCommand, sendSummaryCommand);
+    const configureEmailCommand = vscode.commands.registerCommand('aiMentor.configureEmail', async () => {
+        // Auto-configure with provided credentials
+        const email = 'kevkolyakov@gmail.com';
+        const appPassword = 'ecia zhoz abwp disi';
+        // Update VS Code settings
+        const config = vscode.workspace.getConfiguration('aiMentor');
+        await config.update('smtpHost', 'smtp.gmail.com', vscode.ConfigurationTarget.Global);
+        await config.update('smtpPort', 587, vscode.ConfigurationTarget.Global);
+        await config.update('smtpSecure', false, vscode.ConfigurationTarget.Global);
+        await config.update('smtpUser', email, vscode.ConfigurationTarget.Global);
+        await config.update('smtpPass', appPassword, vscode.ConfigurationTarget.Global);
+        await config.update('smtpFrom', `"AI Mentor" <${email}>`, vscode.ConfigurationTarget.Global);
+        vscode.window.showInformationMessage('✅ Gmail SMTP configured! Emails will now be sent to real recipients.');
+        // Force recreate the transporter with new settings
+        notificationService_1.notificationService.setupTransporter();
+    });
+    context.subscriptions.push(activateCommand, deactivateCommand, startDebuggingCommand, traceExecutionCommand, selectProfileCommand, createGitHubMentorCommand, manageProfilesCommand, sendSummaryCommand, configureEmailCommand);
     // Add logging for profile manager initialization
     console.log('ProfileManager initialized with', profileManager.getAllProfiles().length, 'profiles');
     const startupActiveProfile = profileManager.getActiveProfile();
