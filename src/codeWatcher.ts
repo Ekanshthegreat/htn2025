@@ -18,7 +18,14 @@ export class CodeWatcher {
     private proactiveAnalyzer: ProactiveCodeAnalyzer | undefined;
     private isActive: boolean = false;
     private fileWatcher: vscode.FileSystemWatcher | undefined;
-    private debounceDelay: number = 1000;
+    private debounceDelay: number = 3000; // Increased from 1s to 3s
+    
+    // Rate limiting for different types of events
+    private lastCursorMoveTime: number = 0;
+    private lastAnalysisTime: number = 0;
+    private cursorMoveThrottle: number = 10000; // 10 seconds between cursor analysis
+    private analysisThrottle: number = 5000; // 5 seconds between code analysis
+    private significantChangeThreshold: number = 10; // Minimum characters changed
 
     constructor(
         astAnalyzer: ASTAnalyzer,
@@ -109,11 +116,25 @@ export class CodeWatcher {
 
     private async handleFileCreate(uri: vscode.Uri) {
         const document = await vscode.workspace.openTextDocument(uri);
+        const content = document.getText();
+        
+        // Skip empty files or very small files
+        if (content.trim().length < 20) {
+            return;
+        }
+        
+        // Skip file creation analysis for OpenAI to reduce API calls
+        const config = vscode.workspace.getConfiguration('aiMentor');
+        const provider = config.get<string>('llmProvider', 'gemini');
+        if (provider === 'openai') {
+            return; // Skip file creation analysis for OpenAI due to rate limits
+        }
+        
         await this.llmService.sendMessage({
             type: 'file_created',
             fileName: document.fileName,
             language: document.languageId,
-            content: document.getText()
+            content: this.truncateForContext(content)
         });
     }
 
@@ -129,11 +150,31 @@ export class CodeWatcher {
     }
 
     private async handleCursorChange(editor: vscode.TextEditor, selections: readonly vscode.Selection[]) {
+        const now = Date.now();
+        
+        // Throttle cursor move events - only analyze every 10 seconds
+        if (now - this.lastCursorMoveTime < this.cursorMoveThrottle) {
+            return;
+        }
+        
+        this.lastCursorMoveTime = now;
+        
         const document = editor.document;
         const position = selections[0].active;
         
-        // Analyze the context around the cursor
+        // Only analyze if cursor is on a significant line (not empty/whitespace)
         const line = document.lineAt(position.line);
+        if (line.text.trim().length === 0) {
+            return;
+        }
+        
+        // Skip cursor analysis for OpenAI to reduce API calls
+        const config = vscode.workspace.getConfiguration('aiMentor');
+        const provider = config.get<string>('llmProvider', 'gemini');
+        if (provider === 'openai') {
+            return; // Skip cursor analysis for OpenAI due to rate limits
+        }
+        
         const context = this.getContextAroundPosition(document, position);
 
         await this.llmService.sendMessage({
@@ -147,8 +188,32 @@ export class CodeWatcher {
     }
 
     private async analyzeChanges(document: vscode.TextDocument, previousContent: string, currentContent: string) {
+        const now = Date.now();
+        
+        // Throttle analysis requests
+        if (now - this.lastAnalysisTime < this.analysisThrottle) {
+            return;
+        }
+        
+        // Check if change is significant enough to analyze
+        const changeSize = Math.abs(currentContent.length - previousContent.length);
+        if (changeSize < this.significantChangeThreshold) {
+            return;
+        }
+        
+        this.lastAnalysisTime = now;
+        
         // Generate diff
         const changes = diff.diffLines(previousContent, currentContent);
+        
+        // Check if changes are meaningful (not just whitespace)
+        const meaningfulChanges = changes.some(change => 
+            (change.added || change.removed) && change.value.trim().length > 0
+        );
+        
+        if (!meaningfulChanges) {
+            return;
+        }
         
         // Parse AST for both versions
         const previousAST = await this.astAnalyzer.parseCode(previousContent, document.languageId);
@@ -168,8 +233,8 @@ export class CodeWatcher {
                 diff: changes,
                 astAnalysis: analysis,
                 patternAnalysis: proactiveAnalysis,
-                previousContent: previousContent,
-                currentContent: currentContent,
+                previousContent: this.truncateForContext(previousContent),
+                currentContent: this.truncateForContext(currentContent),
                 timestamp: new Date().toISOString()
             });
         }
@@ -241,5 +306,34 @@ export class CodeWatcher {
     private isSupportedLanguage(languageId: string): boolean {
         const supportedLanguages = ['javascript', 'typescript', 'python', 'java', 'cpp'];
         return supportedLanguages.includes(languageId);
+    }
+    
+    private truncateForContext(content: string, maxLength: number = 3000): string {
+        if (content.length <= maxLength) {
+            return content;
+        }
+        
+        // Try to truncate at a reasonable point (end of line)
+        const truncated = content.substring(0, maxLength);
+        const lastNewline = truncated.lastIndexOf('\n');
+        
+        if (lastNewline > maxLength * 0.8) {
+            return truncated.substring(0, lastNewline) + '\n\n[Content truncated to stay within context limits]';
+        }
+        
+        return truncated + '\n\n[Content truncated to stay within context limits]';
+    }
+    
+    // Method to adjust throttling based on provider
+    setProviderSpecificThrottling(provider: string) {
+        if (provider === 'openai') {
+            this.debounceDelay = 5000; // 5 seconds for OpenAI
+            this.cursorMoveThrottle = 30000; // 30 seconds for cursor moves
+            this.analysisThrottle = 10000; // 10 seconds for analysis
+        } else {
+            this.debounceDelay = 2000; // 2 seconds for Gemini
+            this.cursorMoveThrottle = 10000; // 10 seconds for cursor moves
+            this.analysisThrottle = 3000; // 3 seconds for analysis
+        }
     }
 }

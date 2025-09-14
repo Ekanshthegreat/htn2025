@@ -37,6 +37,16 @@ export class LLMService {
     private geminiService: GeminiService | null = null;
     private conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
     private profileManager?: any;
+    
+    // Rate limiting properties
+    private lastRequestTime: number = 0;
+    private requestQueue: Array<{ message: MentorMessage; resolve: (value: MentorResponse | null) => void; reject: (error: any) => void }> = [];
+    private isProcessingQueue: boolean = false;
+    private requestCount: number = 0;
+    private requestWindowStart: number = 0;
+    private readonly MAX_REQUESTS_PER_MINUTE = 10;
+    private readonly MIN_REQUEST_INTERVAL = 6000; // 6 seconds between requests
+    private readonly CONTEXT_WINDOW_LIMIT = 8000; // Conservative token limit
 
     constructor(profileManager?: any) {
         this.profileManager = profileManager;
@@ -68,17 +78,95 @@ export class LLMService {
         const config = vscode.workspace.getConfiguration('aiMentor');
         const provider = config.get<string>('llmProvider', 'gemini');
         
-        // Use Gemini by default
+        // Use Gemini by default (no rate limiting needed for Gemini)
         if (provider === 'gemini' && this.geminiService) {
             return await this.geminiService.sendMessage(message, this.profileManager);
         }
         
-        // Fallback to OpenAI if configured
+        // Apply rate limiting for OpenAI
         if (provider === 'openai' && this.openai) {
-            return await this.sendOpenAIMessage(message);
+            return await this.sendOpenAIMessageWithRateLimit(message);
         }
         
         return null;
+    }
+    
+    private async sendOpenAIMessageWithRateLimit(message: MentorMessage): Promise<MentorResponse | null> {
+        return new Promise((resolve, reject) => {
+            // Add to queue
+            this.requestQueue.push({ message, resolve, reject });
+            
+            // Process queue if not already processing
+            if (!this.isProcessingQueue) {
+                this.processRequestQueue();
+            }
+        });
+    }
+    
+    private async processRequestQueue(): Promise<void> {
+        if (this.isProcessingQueue || this.requestQueue.length === 0) {
+            return;
+        }
+        
+        this.isProcessingQueue = true;
+        
+        while (this.requestQueue.length > 0) {
+            // Check rate limits
+            const now = Date.now();
+            
+            // Reset request count if window expired (1 minute)
+            if (now - this.requestWindowStart > 60000) {
+                this.requestCount = 0;
+                this.requestWindowStart = now;
+            }
+            
+            // Check if we've exceeded requests per minute
+            if (this.requestCount >= this.MAX_REQUESTS_PER_MINUTE) {
+                const waitTime = 60000 - (now - this.requestWindowStart);
+                console.log(`Rate limit reached, waiting ${waitTime}ms`);
+                await this.sleep(waitTime);
+                continue;
+            }
+            
+            // Check minimum interval between requests
+            const timeSinceLastRequest = now - this.lastRequestTime;
+            if (timeSinceLastRequest < this.MIN_REQUEST_INTERVAL) {
+                const waitTime = this.MIN_REQUEST_INTERVAL - timeSinceLastRequest;
+                console.log(`Throttling request, waiting ${waitTime}ms`);
+                await this.sleep(waitTime);
+            }
+            
+            // Process next request
+            const { message, resolve, reject } = this.requestQueue.shift()!;
+            
+            try {
+                const response = await this.sendOpenAIMessage(message);
+                this.requestCount++;
+                this.lastRequestTime = Date.now();
+                resolve(response);
+            } catch (error) {
+                // Implement exponential backoff for rate limit errors
+                if (this.isRateLimitError(error)) {
+                    console.log('Rate limit error detected, implementing backoff');
+                    const backoffTime = Math.min(30000, 1000 * Math.pow(2, this.requestCount % 5)); // Max 30s
+                    await this.sleep(backoffTime);
+                    // Re-queue the request
+                    this.requestQueue.unshift({ message, resolve, reject });
+                } else {
+                    reject(error);
+                }
+            }
+        }
+        
+        this.isProcessingQueue = false;
+    }
+    
+    private isRateLimitError(error: any): boolean {
+        return error?.status === 429 || error?.code === 'rate_limit_exceeded';
+    }
+    
+    private sleep(ms: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
     
     private async sendOpenAIMessage(message: MentorMessage): Promise<MentorResponse | null> {
@@ -91,18 +179,8 @@ export class LLMService {
             
             const response = await this.openai.chat.completions.create({
                 model: 'gpt-4',
-                messages: [
-                    {
-                        role: 'system',
-                        content: this.getSystemPrompt(message.type)
-                    },
-                    ...this.conversationHistory,
-                    {
-                        role: 'user',
-                        content: prompt
-                    }
-                ],
-                max_tokens: 1000,
+                messages: this.buildContextAwareMessages(message, prompt),
+                max_tokens: 800, // Reduced to stay within limits
                 temperature: 0.7
             });
 
@@ -115,9 +193,9 @@ export class LLMService {
                 { role: 'assistant', content: content }
             );
 
-            // Keep history manageable
-            if (this.conversationHistory.length > 20) {
-                this.conversationHistory = this.conversationHistory.slice(-20);
+            // Keep history manageable - more aggressive trimming
+            if (this.conversationHistory.length > 10) {
+                this.conversationHistory = this.conversationHistory.slice(-10);
             }
 
             return this.parseResponse(content, message.type);
@@ -310,7 +388,53 @@ Welcome them and provide any initial observations or suggestions about their new
         }
     }
 
+    private buildContextAwareMessages(message: MentorMessage, prompt: string): any[] {
+        const systemPrompt = this.getSystemPrompt(message.type);
+        const messages = [
+            {
+                role: 'system',
+                content: systemPrompt
+            }
+        ];
+        
+        // Calculate approximate token count (rough estimate: 1 token ≈ 4 characters)
+        let tokenCount = Math.ceil(systemPrompt.length / 4) + Math.ceil(prompt.length / 4);
+        
+        // Add conversation history while staying under context limit
+        const relevantHistory = [];
+        for (let i = this.conversationHistory.length - 1; i >= 0; i--) {
+            const historyItem = this.conversationHistory[i];
+            const historyTokens = Math.ceil(historyItem.content.length / 4);
+            
+            if (tokenCount + historyTokens > this.CONTEXT_WINDOW_LIMIT) {
+                break;
+            }
+            
+            relevantHistory.unshift(historyItem);
+            tokenCount += historyTokens;
+        }
+        
+        messages.push(...relevantHistory);
+        messages.push({
+            role: 'user',
+            content: prompt
+        });
+        
+        return messages;
+    }
+    
+    private truncateContent(content: string, maxLength: number = 2000): string {
+        if (content.length <= maxLength) {
+            return content;
+        }
+        
+        return content.substring(0, maxLength) + '\n\n[Content truncated to stay within context limits]';
+    }
+    
     clearHistory() {
         this.conversationHistory = [];
+        this.requestQueue = [];
+        this.requestCount = 0;
+        this.requestWindowStart = 0;
     }
 }
