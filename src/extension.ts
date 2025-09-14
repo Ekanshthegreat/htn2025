@@ -361,13 +361,9 @@ export function activate(context: vscode.ExtensionContext) {
         selectProfileCommand,
         createGitHubMentorCommand,
         manageProfilesCommand,
-<<<<<<< HEAD
         analyzeCodeCommand,
-        sendSummaryCommand
-=======
         sendSummaryCommand,
         configureEmailCommand
->>>>>>> 3cdb176dd866ded330bdd09b70f8f548eeaf06a5
     );
     
     // Add logging for profile manager initialization

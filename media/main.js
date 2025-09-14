@@ -73,10 +73,6 @@
         if (mentorId && mentorId !== currentMentor.id && availableProfiles.length > 0) {
             const selectedProfile = availableProfiles.find(p => p.id === mentorId);
             if (selectedProfile) {
-                if (currentMentor.id) {
-                    showMentorTransition(currentMentor.id, mentorId);
-                }
-                
                 currentMentor.id = selectedProfile.id;
                 currentMentor.name = selectedProfile.name;
                 currentMentor.avatar = selectedProfile.avatar || '🤖';
@@ -87,7 +83,6 @@
                     profileId: mentorId 
                 });
                 
-                addSystemMessage(`${currentMentor.name} has joined the conversation!`);
                 updateStatus(`${currentMentor.name} is ready to help`);
                 applyMentorTheme(selectedProfile.personality);
             }

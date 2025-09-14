@@ -49,6 +49,7 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
 
         // Send initial profile data when webview is ready
         setTimeout(() => {
+            this.sendProfileUpdate();
             this.updateWebview();
         }, 100);
     }
@@ -117,6 +118,24 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                 };
             });
             this._view.webview.postMessage({ type: 'updateMessages', messages: formattedMessages });
+        }
+    }
+
+    private sendProfileUpdate() {
+        if (this._view && this.profileManager) {
+            try {
+                const profiles = this.profileManager.getAllProfiles();
+                const activeProfile = this.profileManager.getActiveProfile();
+                
+                this._view.webview.postMessage({
+                    type: 'updateProfiles',
+                    profiles: profiles,
+                    activeProfileId: activeProfile?.id || null,
+                    activeMentorName: activeProfile?.name || 'AI Mentor'
+                });
+            } catch (error) {
+                console.error('Error sending profile update:', error);
+            }
         }
     }
 
@@ -293,6 +312,7 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
             const success = await this.profileManager.setActiveProfile(profileId);
             if (success) {
                 const profile = this.profileManager.getProfile(profileId);
+                this.sendProfileUpdate(); // Send updated profile info to webview
                 this.updateWebview();
                 vscode.window.showInformationMessage(`Switched to mentor profile: ${profile?.name}`);
             }
@@ -501,15 +521,16 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                             <img id="mentorAvatar" class="mentor-avatar-img" src="https://avatars.githubusercontent.com/u/60302907?v=4" alt="Mentor Avatar" />
                             <h2 id="mentorTitle">AI Mentor</h2>
                         </div>
-                        <div class="header-controls">
-                            <select id="mentorSelect" class="mentor-dropdown">
-                                ${mentorOptions}
-                            </select>
-                            <button id="analyzeBtn" class="btn btn-primary">Analyze Code</button>
-                            <button id="clearBtn" class="btn btn-secondary">Clear</button>
-                        </div>
                     </div>
                     
+                    <div class="header-controls">
+                        <select id="mentorSelect" class="mentor-dropdown">
+                            ${mentorOptions}
+                        </select>
+                        <button id="analyzeBtn" class="btn btn-primary">Analyze Code</button>
+                        <button id="clearBtn" class="btn btn-secondary">Clear</button>
+                    </div>
+
                     <div id="status" class="status">
                         <span class="status-indicator"></span>
                         <span id="statusText">Ready to help</span>

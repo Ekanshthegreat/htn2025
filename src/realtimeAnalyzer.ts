@@ -53,15 +53,11 @@ export class RealtimeAnalyzer {
 
         this.setupEventListeners();
         
-        // Show initial greeting from active mentor if available
         const activeProfile = this.profileManager.getActiveProfile();
-        if (activeProfile) {
-            vscode.window.showInformationMessage(`🤖 ${activeProfile.name}: Ready to help you code better!`);
-        } else {
+        if (!activeProfile) {
             vscode.window.showInformationMessage('🤖 AI Mentor: Please create a GitHub-based mentor profile to get started!');
         }
         
-        // Debug: Log that analyzer is initialized
         console.log('🔧 AI Mentor: Real-time analyzer initialized and ready!');
         
         // Immediately analyze current document if one is open and we have a profile
