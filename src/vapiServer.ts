@@ -7,11 +7,13 @@ export class VapiServer {
     private app: express.Express;
     private server: any;
     private profileManager: ProfileManager;
+    private messageContext: any;
 
-    constructor(profileManager: ProfileManager) {
+    constructor(profileManager: ProfileManager, messageContext: any) {
         this.profileManager = profileManager;
         this.app = express();
         this.setupServer();
+        this.messageContext = messageContext;
     }
 
     private setupServer() {
@@ -31,7 +33,8 @@ export class VapiServer {
             // Format mentor data for VAPI
             const mentorData = {
                 mentorName: activeProfile.name,
-                context: this.formatMentorContext(activeProfile)
+                context: this.formatMentorContext(activeProfile),
+                avatar: activeProfile.avatar,
             };
 
             res.json(mentorData);
@@ -40,16 +43,20 @@ export class VapiServer {
 
     private formatMentorContext(profile: any): string {
         return `Personality Traits:
-- Communication Style: ${profile.personality.communicationStyle}
-- Feedback Approach: ${profile.personality.feedbackApproach}
-- Areas of Expertise: ${profile.personality.expertise.join(', ')}
-- GitHub Insights: ${JSON.stringify(profile.githubInsights)}
+        - Communication Style: ${profile.personality.communicationStyle}
+        - Feedback Approach: ${profile.personality.feedbackApproach}
+        - Areas of Expertise: ${profile.personality.expertise.join(', ')}
+        - GitHub Insights: ${JSON.stringify(profile.githubInsights)}
 
-Voice & Style:
-- Speaks like ${profile.name}, a renowned developer known for ${profile.personality.expertise[0]}
-- Uses ${profile.personality.communicationStyle} communication style
-- Maintains coding standards aligned with their GitHub profile
-- Provides feedback in a ${profile.personality.feedbackApproach} manner`;
+        Voice & Style:
+        - Speaks like ${profile.name}, a renowned developer known for ${profile.personality.expertise[0]}
+        - Uses ${profile.personality.communicationStyle} communication style
+        - Maintains coding standards aligned with their GitHub profile
+        - Provides feedback in a ${profile.personality.feedbackApproach} manner
+
+        The User(Mentee) has intiated this conversation regarding the following code context:
+        - ${this.messageContext || 'The user has not provided any code context yet.'}
+        `;
     }
 
     public start(port: number = 3000): Promise<number> {

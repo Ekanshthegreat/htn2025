@@ -292,7 +292,7 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
 
     private async startVoiceChat() {
         if (!this.vapiServer) {
-            this.vapiServer = new VapiServer(this.profileManager);
+            this.vapiServer = new VapiServer(this.profileManager, {}); // {} = Message Context
         }
         
         try {
@@ -352,12 +352,12 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                         <textarea id="codeInput" placeholder="Paste code here for explanation..."></textarea>
                         <button id="explainBtn" class="btn btn-primary">Explain Code</button>
                     </div>
-                    <button id="clearBtn" class="btn btn-secondary">Clear</button>
-                    <button id="voiceChatBtn" class="btn btn-primary">🎤 Speak to Mentor</button>
-                </div>
+                    <button id="voiceChatBtn" class="btn btn-success">🎤 Speak to Mentor</button>
+                </div>  
 
                 <script src="${scriptUri}"></script>
             </body>
             </html>`;
     }
 }
+ 
