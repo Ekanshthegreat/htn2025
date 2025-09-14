@@ -105,9 +105,9 @@ export class CodeWatcher {
 
     private async handleTextChange(document: vscode.TextDocument, changes: readonly vscode.TextDocumentContentChangeEvent[]) {
         const currentContent = document.getText();
-        const previousContent = this.previousContent.get(document.uri.toString()) || '';
+        const previousContent = this.previousContent.get(document.uri.toString());
 
-        if (previousContent !== currentContent) {
+        if (previousContent && previousContent !== currentContent) {
             await this.analyzeChanges(document, previousContent, currentContent);
         }
 

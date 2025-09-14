@@ -26,17 +26,12 @@ interface FileAnalysis {
 
 export class MentorHoverProvider implements vscode.HoverProvider {
     private personalityService: MentorPersonalityService;
-    private aiMentorProvider?: any;
 
     constructor(
         private profileManager: ProfileManager,
         private astAnalyzer: ASTAnalyzer
     ) {
         this.personalityService = new MentorPersonalityService();
-    }
-
-    public setAIMentorProvider(provider: any) {
-        this.aiMentorProvider = provider;
     }
 
     async provideHover(
@@ -70,26 +65,22 @@ export class MentorHoverProvider implements vscode.HoverProvider {
 
         if (suggestions.length === 0) return undefined;
 
-        // Send suggestions to chat panel if available
-        if (this.aiMentorProvider && suggestions.length > 0) {
-            const mentorResponse = {
-                type: 'suggestion',
-                message: `**${activeProfile.name}** analyzed your code at line ${position.line + 1}:`,
-                suggestions: suggestions.map(s => s.replace(/\*\*/g, '').replace(/🔍|⚡|🧪|🏗️|🐧|⚛️|📦|🚀|🎨|🔥|🌟|✨|📏|📝|🎯/g, '').trim()),
-                warnings: [],
-                timestamp: Date.now()
-            };
-            
-            this.aiMentorProvider.addMessage(mentorResponse);
-        }
-
-        // Still show a minimal hover for immediate feedback
+        // Show hover tooltip with suggestions directly
         const markdown = new vscode.MarkdownString();
         markdown.isTrusted = true;
-        markdown.appendMarkdown(`💡 **${activeProfile.name}** sent ${suggestions.length} suggestion${suggestions.length > 1 ? 's' : ''} to chat panel`);
+        
+        // Add mentor header
+        markdown.appendMarkdown(`**💡 ${activeProfile.name}** suggests:\n\n`);
+        
+        // Add suggestions to hover tooltip
+        suggestions.forEach((suggestion, index) => {
+            const cleanSuggestion = suggestion.replace(/\*\*/g, '').replace(/🔍|⚡|🧪|🏗️|🐧|⚛️|📦|🚀|🎨|🔥|🌟|✨|📏|📝|🎯/g, '').trim();
+            markdown.appendMarkdown(`${index + 1}. ${cleanSuggestion}\n\n`);
+        });
 
         return new vscode.Hover(markdown, wordRange);
     }
+
 
     private getContextAroundPosition(document: vscode.TextDocument, position: vscode.Position): string {
         const startLine = Math.max(0, position.line - 3);
@@ -115,31 +106,109 @@ export class MentorHoverProvider implements vscode.HoverProvider {
     ): Promise<string[]> {
         const suggestions: string[] = [];
         
-        // Analyze specific code elements
-        const elementAnalysis = this.analyzeCodeElement(word, lineText, context, languageId);
-        
-        // Update personality service with current profile
-        this.personalityService.setCurrentProfile(profile);
-        
-        // Generate custom suggestions based on the specific element and full file context
-        const customSuggestions = this.getCustomSuggestions(elementAnalysis, profile, fileAnalysis);
-        suggestions.push(...customSuggestions);
-        
-        // Add personalized comments based on GitHub profile analysis
-        const personalizedComment = this.personalityService.getPersonalizedComment(lineText, context);
-        if (personalizedComment) {
-            suggestions.push(personalizedComment);
+        // First, check for specific code issues that are contextually relevant
+        const contextualIssues = this.analyzeContextualIssues(word, lineText, context, languageId);
+        if (contextualIssues.length > 0) {
+            suggestions.push(...contextualIssues.map(issue => `**🔍 ${profile.name}:** ${issue}`));
         }
         
-        // Generate context-aware architectural suggestions
-        const architecturalSuggestions = this.getContextualArchitecturalSuggestions(word, lineText, fileAnalysis, profile, position);
-        suggestions.push(...architecturalSuggestions);
-        
-        // Code styling suggestions
-        const stylingSuggestions = this.getCodeStylingSuggestions(word, lineText, context, languageId, profile);
-        suggestions.push(...stylingSuggestions);
+        // Only add generic suggestions if we don't have specific contextual ones
+        if (suggestions.length === 0) {
+            // Analyze specific code elements
+            const elementAnalysis = this.analyzeCodeElement(word, lineText, context, languageId);
+            
+            // Generate targeted suggestions based on the specific element
+            const customSuggestions = this.getTargetedSuggestions(elementAnalysis, profile, word, lineText, context);
+            suggestions.push(...customSuggestions);
+        }
         
         return suggestions.filter(s => s.length > 0);
+    }
+
+    private analyzeContextualIssues(word: string, lineText: string, context: string, languageId: string): string[] {
+        const issues: string[] = [];
+        
+        // Check for infinite loop patterns
+        if (lineText.includes('while') && context.includes('while')) {
+            const whileBlock = this.extractWhileBlock(context, lineText);
+            if (whileBlock && !this.hasLoopIncrement(whileBlock)) {
+                issues.push("Potential infinite loop detected - missing loop variable increment/decrement");
+            }
+        }
+        
+        // Check for array access patterns
+        if (word === 'arr' && lineText.includes('[')) {
+            if (context.includes('function') && !context.includes('if (!arr') && !context.includes('if (arr')) {
+                issues.push("Consider adding null/undefined check for array parameter before accessing");
+            }
+        }
+        
+        // Check for array length access
+        if (lineText.includes('.length') && word === 'arr') {
+            if (!context.includes('if (!arr') && !context.includes('if (arr')) {
+                issues.push("Array length access without null check - consider defensive programming");
+            }
+        }
+        
+        // Check for missing semicolons in TypeScript/JavaScript
+        if ((languageId === 'typescript' || languageId === 'javascript') && 
+            !lineText.trim().endsWith(';') && 
+            (lineText.includes('return') || lineText.includes('let') || lineText.includes('const'))) {
+            issues.push("Missing semicolon - add ';' for explicit statement termination");
+        }
+        
+        return issues;
+    }
+
+    private extractWhileBlock(context: string, currentLine: string): string | null {
+        const lines = context.split('\n');
+        const currentLineIndex = lines.findIndex(line => line.includes(currentLine.trim()));
+        if (currentLineIndex === -1) return null;
+        
+        let whileBlock = '';
+        let braceCount = 0;
+        let inWhile = false;
+        
+        for (let i = currentLineIndex; i < lines.length; i++) {
+            const line = lines[i];
+            if (line.includes('while')) {
+                inWhile = true;
+            }
+            if (inWhile) {
+                whileBlock += line + '\n';
+                braceCount += (line.match(/\{/g) || []).length;
+                braceCount -= (line.match(/\}/g) || []).length;
+                if (braceCount === 0 && line.includes('}')) {
+                    break;
+                }
+            }
+        }
+        
+        return whileBlock;
+    }
+
+    private hasLoopIncrement(whileBlock: string): boolean {
+        return whileBlock.includes('++') || 
+               whileBlock.includes('--') || 
+               whileBlock.includes('+=') || 
+               whileBlock.includes('-=') ||
+               whileBlock.includes('i = i + 1') ||
+               whileBlock.includes('i = i - 1');
+    }
+
+    private getTargetedSuggestions(analysis: CodeElementAnalysis, profile: MentorProfile, word: string, lineText: string, context: string): string[] {
+        const suggestions: string[] = [];
+        
+        // Only provide suggestions that are directly relevant to the code being analyzed
+        if (analysis.type === 'function' && lineText.includes('function')) {
+            suggestions.push(`**🔧 ${profile.name}:** Function '${analysis.name}' - ensure it has a single responsibility and clear return behavior`);
+        }
+        
+        if (analysis.type === 'variable' && word.length <= 3) {
+            suggestions.push(`**📝 ${profile.name}:** Variable '${word}' could use a more descriptive name for better code readability`);
+        }
+        
+        return suggestions;
     }
 
     private analyzeFullFile(document: vscode.TextDocument): FileAnalysis {
