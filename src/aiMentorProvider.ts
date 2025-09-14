@@ -878,12 +878,27 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                     </div>
                     
                     <div class="header-controls">
-                        <select id="mentorSelect" class="mentor-dropdown">
-                            ${mentorOptions}
-                        </select>
-                        <button id="analyzeBtn" class="btn btn-primary">Analyze Code</button>
-                        <button id="clearBtn" class="btn btn-secondary">Clear</button>
-                        <button id="voiceChatBtn" class="btn btn-success">🎤 Speak to Mentor</button>
+                        <div class="controls-row">
+                            <div class="mentor-selection">
+                                <select id="mentorSelect" class="mentor-dropdown">
+                                    ${mentorOptions}
+                                </select>
+                            </div>
+                            <div class="action-buttons">
+                                <button id="analyzeBtn" class="btn btn-primary">
+                                    <span class="btn-icon">🔍</span>
+                                    <span class="btn-text">Analyze</span>
+                                </button>
+                                <button id="voiceChatBtn" class="btn btn-success">
+                                    <span class="btn-icon">🎤</span>
+                                    <span class="btn-text">Voice Chat</span>
+                                </button>
+                                <button id="clearBtn" class="btn btn-secondary">
+                                    <span class="btn-icon">🗑️</span>
+                                    <span class="btn-text">Clear</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     <div id="status" class="status">
@@ -906,10 +921,6 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                         </div>
                     </div>
 
-                    <div class="input-section">
-                        <textarea id="codeInput" placeholder="Paste code here for explanation..."></textarea>
-                        <button id="explainBtn" class="btn btn-primary">Explain Code</button>
-                    </div>
                 </div>
 
                 <script src="${scriptUri}"></script>
