@@ -362,12 +362,28 @@
             } else {
                 mentorSelect.disabled = false;
                 
-                // Add profile options
+                // Add profile options with GitHub avatars
                 availableProfiles.forEach(profile => {
                     const option = document.createElement('option');
                     option.value = profile.id;
-                    option.textContent = profile.name;
+                    
+                    // Enhanced option text with GitHub info
+                    let displayText = profile.name;
+                    if (profile.githubUsername) {
+                        displayText += ` (@${profile.githubUsername})`;
+                    }
+                    
+                    option.textContent = displayText;
                     option.selected = profile.id === activeProfileId;
+                    
+                    // Store avatar data for later use
+                    if (profile.githubUsername) {
+                        option.dataset.avatar = `https://github.com/${profile.githubUsername}.png?size=16`;
+                    } else {
+                        option.dataset.avatar = profile.avatar || '🤖';
+                    }
+                    option.dataset.githubUsername = profile.githubUsername || '';
+                    
                     mentorSelect.appendChild(option);
                 });
             }
@@ -405,10 +421,16 @@
     function updateMentorName(mentorName) {
         console.log('Updating mentor name to:', mentorName);
         
-        // Always update the header to show the active mentor
+        // Always update the header to show the active mentor with profile photo
         const headerElement = document.querySelector('#mentorTitle');
         if (headerElement) {
-            headerElement.textContent = `🤖 ${mentorName || 'AI Mentor'}`;
+            const activeProfile = availableProfiles.find(p => p.id === currentMentor.id);
+            if (activeProfile && activeProfile.githubUsername) {
+                const avatarUrl = `https://github.com/${activeProfile.githubUsername}.png?size=32`;
+                headerElement.innerHTML = `<img src="${avatarUrl}" class="mentor-avatar-img" alt="${mentorName}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';"> <span class="fallback-avatar" style="display:none;">🤖</span> ${mentorName || 'AI Mentor'}`;
+            } else {
+                headerElement.textContent = `🤖 ${mentorName || 'AI Mentor'}`;
+            }
         }
         
         // Update welcome message if it exists
@@ -436,6 +458,9 @@
         if (!mentorId) return '🤖';
         
         const profile = availableProfiles.find(p => p.id === mentorId);
+        if (profile && profile.githubUsername) {
+            return `https://github.com/${profile.githubUsername}.png?size=24`;
+        }
         return profile ? (profile.avatar || '🤖') : '🤖';
     }
 
@@ -476,9 +501,18 @@
         
         typingIndicator = document.createElement('div');
         typingIndicator.className = 'typing-indicator';
+        const activeProfile = availableProfiles.find(p => p.id === currentMentor.id);
+        let avatarHtml;
+        if (activeProfile && activeProfile.githubUsername) {
+            const avatarUrl = `https://github.com/${activeProfile.githubUsername}.png?size=24`;
+            avatarHtml = `<img src="${avatarUrl}" class="mentor-avatar-img typing-avatar" alt="${currentMentor.name}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';"><span class="fallback-avatar" style="display:none;">🤖</span>`;
+        } else {
+            avatarHtml = `<span class="mentor-avatar">${currentMentor.avatar || '🤖'}</span>`;
+        }
+        
         typingIndicator.innerHTML = `
             <div class="typing-content">
-                <span class="mentor-avatar">${currentMentor.avatar}</span>
+                ${avatarHtml}
                 <span class="typing-text">${currentMentor.name} is thinking...</span>
                 <div class="typing-dots">
                     <span></span>
