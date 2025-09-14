@@ -25,6 +25,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AIMentorProvider = void 0;
 const vscode = __importStar(require("vscode"));
+const interactionTracker_1 = require("./interactionTracker");
 class AIMentorProvider {
     constructor(_extensionUri, codeWatcher, llmService, profileManager) {
         this._extensionUri = _extensionUri;
@@ -66,6 +67,15 @@ class AIMentorProvider {
     }
     addMessage(response) {
         this.messages.push(response);
+        const activeProfile = this.profileManager?.getActiveProfile();
+        if (activeProfile) {
+            interactionTracker_1.interactionTracker.logInteraction({
+                mentorId: activeProfile.id,
+                timestamp: new Date(),
+                type: 'advice_provided',
+                data: response
+            });
+        }
         this.updateWebview();
     }
     updateWebview() {
@@ -124,6 +134,15 @@ class AIMentorProvider {
         if (!activeEditor) {
             this.sendErrorToWebview('No active editor found');
             return;
+        }
+        const activeProfile = this.profileManager?.getActiveProfile();
+        if (activeProfile) {
+            interactionTracker_1.interactionTracker.logInteraction({
+                mentorId: activeProfile.id,
+                timestamp: new Date(),
+                type: 'advice_request',
+                data: { code, language: activeEditor.document.languageId }
+            });
         }
         try {
             // Send typing indicator to webview

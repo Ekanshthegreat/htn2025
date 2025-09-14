@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ProfileManager, MentorProfile } from './profileManager';
 import { ASTAnalyzer } from './astAnalyzer';
 import { MentorPersonalityService } from './mentorPersonality';
+import { interactionTracker } from './interactionTracker';
 
 interface CodeElementAnalysis {
     type: 'function' | 'class' | 'variable' | 'method' | 'unknown';
@@ -85,6 +86,16 @@ export class MentorHoverProvider implements vscode.HoverProvider {
         suggestions.forEach(suggestion => {
             markdown.appendMarkdown(`${suggestion}\n\n`);
         });
+
+        // Log hover interaction for summary emails
+        try {
+            interactionTracker.logHover(activeProfile.id, {
+                fileName: document.fileName,
+                position: { line: position.line, character: position.character },
+                word,
+                suggestions
+            });
+        } catch {}
 
         return new vscode.Hover(markdown, wordRange);
     }

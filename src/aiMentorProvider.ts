@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { CodeWatcher } from './codeWatcher';
 import { LLMService, MentorResponse } from './llmService';
 import { ProfileManager } from './profileManager';
+import { interactionTracker } from './interactionTracker';
 
 export class AIMentorProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'aiMentorPanel';
@@ -59,6 +60,17 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
 
     public addMessage(response: MentorResponse) {
         this.messages.push(response);
+
+        const activeProfile = this.profileManager?.getActiveProfile();
+        if (activeProfile) {
+            interactionTracker.logInteraction({
+                mentorId: activeProfile.id,
+                timestamp: new Date(),
+                type: 'advice_provided',
+                data: response
+            });
+        }
+
         this.updateWebview();
     }
 
@@ -126,6 +138,16 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
         if (!activeEditor) {
             this.sendErrorToWebview('No active editor found');
             return;
+        }
+
+        const activeProfile = this.profileManager?.getActiveProfile();
+        if (activeProfile) {
+            interactionTracker.logInteraction({
+                mentorId: activeProfile.id,
+                timestamp: new Date(),
+                type: 'advice_request',
+                data: { code, language: activeEditor.document.languageId }
+            });
         }
 
         try {

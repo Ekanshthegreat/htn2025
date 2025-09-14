@@ -350,16 +350,12 @@ function validateEmail(email) {
 // DEBUGGING PATTERNS - Test debugging advice
 // =============================================================================
 
-// Console.log debugging (should trigger logging advice)
+// Debugging function (console.log statements removed for production)
 function debugFunction(data) {
-    console.log('Input data:', data);
-    
     const processed = data.map(item => {
-        console.log('Processing item:', item);
         return item * 2;
     });
     
-    console.log('Processed data:', processed);
     return processed;
 }
 
@@ -396,7 +392,6 @@ To test the personalized mentor features:
    - Import statements
    - React hooks (useState, useEffect)
    - Async/await patterns
-   - Console.log statements
 
 3. Look for personalized advice that includes:
    - Mentor's name and expertise area
