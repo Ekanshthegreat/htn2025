@@ -2,10 +2,24 @@ import * as vscode from 'vscode';
 import { ASTAnalyzer } from './astAnalyzer';
 import { LLMService } from './llmService';
 import { AIMentorProvider } from './aiMentorProvider';
-import { ProactiveCodeAnalyzer } from './proactiveCodeAnalyzer';
-import * as diff from 'diff';
 import { ProfileManager } from './profileManager';
-import { interactionTracker } from './interactionTracker';
+import { ProactiveCodeAnalyzer } from './proactiveCodeAnalyzer';
+import { DiagnosticsManager } from './diagnosticsManager';
+import * as diff from 'diff';
+
+// Import interaction tracker
+const interactionTracker = {
+    logCodeChange: (profileId: string | undefined, data: any) => {
+        // Implementation for tracking code changes
+    }
+};
+
+// Simple diff service
+const diffService = {
+    getDiff: (previousContent: string, currentContent: string) => {
+        return diff.diffLines(previousContent, currentContent);
+    }
+};
 
 export class CodeWatcher {
     private disposables: vscode.Disposable[] = [];
@@ -16,6 +30,7 @@ export class CodeWatcher {
     private aiMentorProvider: AIMentorProvider | undefined;
     private profileManager: ProfileManager | undefined;
     private proactiveAnalyzer: ProactiveCodeAnalyzer | undefined;
+    private diagnosticsManager: DiagnosticsManager;
     private isActive: boolean = false;
     private fileWatcher: vscode.FileSystemWatcher | undefined;
     private debounceDelay: number = 3000; // Increased from 1s to 3s
@@ -35,10 +50,16 @@ export class CodeWatcher {
         this.astAnalyzer = astAnalyzer;
         this.llmService = llmService;
         this.profileManager = profileManager;
+        this.diagnosticsManager = new DiagnosticsManager();
+        this.proactiveAnalyzer = new ProactiveCodeAnalyzer();
     }
 
     setAIMentorProvider(provider: any) {
         this.aiMentorProvider = provider;
+    }
+
+    getDiagnosticsManager(): DiagnosticsManager {
+        return this.diagnosticsManager;
     }
 
     activate() {
@@ -48,6 +69,18 @@ export class CodeWatcher {
         this.setupFileWatcher();
         this.setupTextDocumentWatcher();
         this.setupCursorWatcher();
+        
+        // Initialize previous content for currently open documents
+        this.initializePreviousContent();
+    }
+    
+    private initializePreviousContent() {
+        vscode.workspace.textDocuments.forEach(document => {
+            if (this.isSupportedLanguage(document.languageId)) {
+                this.previousContent.set(document.uri.toString(), document.getText());
+                console.log(`🔧 CodeWatcher: Initialized content tracking for ${document.fileName}`);
+            }
+        });
     }
 
     deactivate() {
@@ -58,6 +91,7 @@ export class CodeWatcher {
         if (this.debounceTimer) {
             clearTimeout(this.debounceTimer);
         }
+        this.diagnosticsManager.dispose();
     }
 
     private setupFileWatcher() {
@@ -188,46 +222,56 @@ export class CodeWatcher {
     }
 
     private async analyzeChanges(document: vscode.TextDocument, previousContent: string, currentContent: string) {
-        const now = Date.now();
+        const startTime = Date.now();
+        const sessionId = Math.random().toString(36).substr(2, 9);
         
-        // Throttle analysis requests
-        if (now - this.lastAnalysisTime < this.analysisThrottle) {
+        console.log(`[AI-FLOW-${sessionId}] 🚀 Starting unified AI analysis flow for ${document.fileName}`);
+        
+        const changes = diffService.getDiff(previousContent, currentContent);
+        
+        if (changes.length === 0) {
+            console.log(`[AI-FLOW-${sessionId}] ⏭️ No changes detected, skipping analysis`);
             return;
         }
-        
-        // Check if change is significant enough to analyze
-        const changeSize = Math.abs(currentContent.length - previousContent.length);
-        if (changeSize < this.significantChangeThreshold) {
-            return;
-        }
-        
-        this.lastAnalysisTime = now;
-        
-        // Generate diff
-        const changes = diff.diffLines(previousContent, currentContent);
-        
-        // Check if changes are meaningful (not just whitespace)
-        const meaningfulChanges = changes.some(change => 
-            (change.added || change.removed) && change.value.trim().length > 0
-        );
-        
-        if (!meaningfulChanges) {
-            return;
-        }
-        
-        // Parse AST for both versions
-        const previousAST = await this.astAnalyzer.parseCode(previousContent, document.languageId);
-        const currentAST = await this.astAnalyzer.parseCode(currentContent, document.languageId);
 
-        // Analyze the changes
-        const analysis = await this.astAnalyzer.analyzeChanges(previousAST, currentAST);
+        console.log(`[AI-FLOW-${sessionId}] 📝 Detected ${changes.length} changes in ${document.fileName}`);
 
-        // Get proactive analysis for pattern-based issues
-        const proactiveAnalysis = await this.proactiveAnalyzer?.analyzeCodeProactively(currentContent, document.languageId);
+        try {
+            // Pattern-based analysis for immediate diagnostics
+            console.log(`[AI-FLOW-${sessionId}] 🔍 Starting pattern-based analysis...`);
+            const patternStartTime = Date.now();
+            const proactiveAnalysis = await this.proactiveAnalyzer?.analyzeCodeProactively(
+                currentContent,
+                document.languageId
+            );
+            const patternDuration = Date.now() - patternStartTime;
+            console.log(`[AI-FLOW-${sessionId}] ✅ Pattern analysis completed in ${patternDuration}ms, found ${proactiveAnalysis?.issues?.length || 0} issues`);
 
-        // Create consolidated analysis combining all three types
-        if (this.aiMentorProvider) {
-            this.aiMentorProvider.addConsolidatedAnalysis({
+            // AST-based analysis
+            console.log(`[AI-FLOW-${sessionId}] 🌳 Starting AST-based analysis...`);
+            const astStartTime = Date.now();
+            const analysis = await this.astAnalyzer.parseCode(
+                currentContent,
+                document.languageId
+            );
+            const astDuration = Date.now() - astStartTime;
+            console.log(`[AI-FLOW-${sessionId}] ✅ AST analysis completed in ${astDuration}ms, parsed ${analysis?.children?.length || 0} nodes`);
+
+            // Apply immediate blue squiggles from pattern analysis
+            console.log(`[AI-FLOW-${sessionId}] 🔍 Pattern analysis issues:`, proactiveAnalysis?.issues);
+            this.applyImmediateDiagnostics(document, proactiveAnalysis?.issues || [], sessionId);
+
+            // Check rate limiting for AI analysis
+            const now = Date.now();
+            if (now - this.lastAnalysisTime < this.analysisThrottle) {
+                console.log(`[AI-FLOW-${sessionId}] ⏸️ Rate limited, skipping AI analysis (last: ${now - this.lastAnalysisTime}ms ago)`);
+                return;
+            }
+            this.lastAnalysisTime = now;
+
+            // Route everything through AI mentor with context
+            console.log(`[AI-FLOW-${sessionId}] 🤖 Starting AI mentor processing...`);
+            await this.processWithAIMentor({
                 fileName: document.fileName,
                 language: document.languageId,
                 diff: changes,
@@ -235,40 +279,45 @@ export class CodeWatcher {
                 patternAnalysis: proactiveAnalysis,
                 previousContent: this.truncateForContext(previousContent),
                 currentContent: this.truncateForContext(currentContent),
-                timestamp: new Date().toISOString()
-            });
-        }
+                timestamp: new Date().toISOString(),
+                sessionId: sessionId
+            }, document);
 
-        // Log code change event for summaries (aggregate added/removed lines)
-        try {
-            let addedLines = 0;
-            let removedLines = 0;
-            for (const c of changes) {
-                const lineCount = (c.value.match(/\n/g) || []).length + (c.value.endsWith('\n') ? 0 : 1);
-                if (c.added) addedLines += lineCount;
-                if (c.removed) removedLines += lineCount;
-            }
-            const activeProfile = this.profileManager?.getActiveProfile();
-            interactionTracker.logCodeChange(activeProfile?.id, {
-                fileName: document.fileName,
-                addedLines,
-                removedLines
-            });
-        } catch {}
+            const totalDuration = Date.now() - startTime;
+            console.log(`[AI-FLOW-${sessionId}] 🎉 Complete unified AI analysis flow finished in ${totalDuration}ms`);
+
+        } catch (error) {
+            const totalDuration = Date.now() - startTime;
+            console.error(`[AI-FLOW-${sessionId}] ❌ AI analysis flow failed after ${totalDuration}ms:`, error);
+            throw error;
+        }
     }
 
-    private getContextAroundPosition(document: vscode.TextDocument, position: vscode.Position): string {
-        const startLine = Math.max(0, position.line - 5);
-        const endLine = Math.min(document.lineCount - 1, position.line + 5);
+    private applyImmediateDiagnostics(document: vscode.TextDocument, issues: any[], sessionId: string) {
+        const diagnostics: vscode.Diagnostic[] = [];
         
-        let context = '';
-        for (let i = startLine; i <= endLine; i++) {
-            const line = document.lineAt(i);
-            context += `${i + 1}: ${line.text}\n`;
-        }
+        issues.forEach(issue => {
+            const range = new vscode.Range(
+                Math.max(0, issue.line - 1),
+                0,
+                Math.max(0, issue.line - 1),
+                issue.endColumn || 100
+            );
+            
+            const diagnostic = new vscode.Diagnostic(
+                range,
+                issue.message,
+                vscode.DiagnosticSeverity.Information // Blue squiggles
+            );
+            
+            diagnostic.source = 'AI Mentor';
+            diagnostics.push(diagnostic);
+        });
         
-        return context;
+        this.diagnosticsManager.getCollection().set(document.uri, diagnostics);
+        console.log(`[AI-FLOW-${sessionId}] 🔵 Applied ${diagnostics.length} blue squiggles to editor`);
     }
+
 
     async startGuidedDebugging(code: string, language: string) {
         const ast = await this.astAnalyzer.parseCode(code, language);
@@ -308,6 +357,217 @@ export class CodeWatcher {
         return supportedLanguages.includes(languageId);
     }
     
+    private async processWithAIMentor(analysisData: any, document: vscode.TextDocument) {
+        const sessionId = analysisData.sessionId;
+        const aiStartTime = Date.now();
+        
+        try {
+            console.log(`[AI-FLOW-${sessionId}] 🔍 Getting active mentor profile...`);
+            
+            // Get active mentor profile
+            const activeProfile = this.profileManager?.getActiveProfile();
+            if (!activeProfile) {
+                console.warn(`[AI-FLOW-${sessionId}] ⚠️ No active mentor profile found, skipping AI processing`);
+                return;
+            }
+
+            console.log(`[AI-FLOW-${sessionId}] 👤 Using mentor profile: ${activeProfile.name} (${activeProfile.id})`);
+
+            // Prepare context for AI with pattern and AST findings
+            console.log(`[AI-FLOW-${sessionId}] 📋 Building mentor context...`);
+            const contextStartTime = Date.now();
+            const contextMessage = this.buildMentorContext(analysisData, activeProfile);
+            const contextDuration = Date.now() - contextStartTime;
+            console.log(`[AI-FLOW-${sessionId}] ✅ Context built in ${contextDuration}ms, length: ${contextMessage.length} chars`);
+
+            // Send to AI with mentor persona
+            console.log(`[AI-FLOW-${sessionId}] 🚀 Sending request to AI service...`);
+            const llmStartTime = Date.now();
+            const aiResponse = await this.llmService.sendMessage({
+                type: 'code_analysis',
+                fileName: analysisData.fileName,
+                language: analysisData.language,
+                content: contextMessage,
+                previousContent: analysisData.previousContent,
+                currentContent: analysisData.currentContent,
+                analysis: {
+                    pattern: analysisData.patternAnalysis,
+                    ast: analysisData.astAnalysis,
+                    diff: analysisData.diff
+                }
+            });
+            const llmDuration = Date.now() - llmStartTime;
+
+            if (aiResponse) {
+                console.log(`[AI-FLOW-${sessionId}] ✅ AI response received in ${llmDuration}ms`);
+                console.log(`[AI-FLOW-${sessionId}] 📊 Response contains: ${Object.keys(aiResponse).join(', ')}`);
+                
+                if (this.aiMentorProvider) {
+                    console.log(`[AI-FLOW-${sessionId}] 🎨 Displaying mentor response...`);
+                    const displayStartTime = Date.now();
+                    await this.displayMentorResponse(aiResponse, activeProfile, document, analysisData);
+                    const displayDuration = Date.now() - displayStartTime;
+                    console.log(`[AI-FLOW-${sessionId}] ✅ Mentor response displayed in ${displayDuration}ms`);
+                } else {
+                    console.warn(`[AI-FLOW-${sessionId}] ⚠️ AI mentor provider not available for display`);
+                }
+            } else {
+                console.warn(`[AI-FLOW-${sessionId}] ⚠️ No AI response received from LLM service`);
+            }
+
+            const totalAiDuration = Date.now() - aiStartTime;
+            console.log(`[AI-FLOW-${sessionId}] 🎉 AI mentor processing completed in ${totalAiDuration}ms`);
+
+        } catch (error) {
+            const totalAiDuration = Date.now() - aiStartTime;
+            console.error(`[AI-FLOW-${sessionId}] ❌ AI mentor processing failed after ${totalAiDuration}ms:`, error);
+            console.error(`[AI-FLOW-${sessionId}] 📋 Error details:`, {
+                name: error instanceof Error ? error.name : 'Unknown',
+                message: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined
+            });
+            
+            // No fallback - only show AI-generated persona responses
+            console.log(`[AI-FLOW-${sessionId}] ❌ Skipping display due to AI failure - no hardcoded fallbacks`);
+        }
+    }
+
+    private buildMentorContext(analysisData: any, mentorProfile: any): string {
+        // Build detailed mentor persona context
+        let context = `You are ${mentorProfile.name}, a coding mentor with the following personality:\n`;
+        
+        // Add mentor personality details
+        if (mentorProfile.personality) {
+            context += `- Communication Style: ${mentorProfile.personality.communicationStyle}\n`;
+            context += `- Expertise: ${mentorProfile.personality.expertise.join(', ')}\n`;
+            context += `- Focus Areas: ${mentorProfile.personality.focusAreas.join(', ')}\n`;
+            context += `- Feedback Approach: ${mentorProfile.personality.feedbackApproach}\n\n`;
+        }
+
+        // Add specific mentor characteristics
+        if (mentorProfile.name === 'Linus Torvalds') {
+            context += `Respond as Linus Torvalds would - direct, efficient, focused on simplicity and performance. Use phrases like "Keep it simple" and be straightforward about issues.\n\n`;
+        }
+
+        // Add specific analysis instructions
+        context += `CRITICAL: Analyze the code changes for:\n`;
+        context += `1. Infinite loops (missing increments, no break conditions)\n`;
+        context += `2. Logic errors (assignment vs comparison, off-by-one errors)\n`;
+        context += `3. Performance issues (O(n²) complexity, memory leaks)\n`;
+        context += `4. Security vulnerabilities (injection, XSS, hardcoded secrets)\n`;
+        context += `5. Code quality issues (deep nesting, long functions)\n\n`;
+        
+        if (mentorProfile.name === 'Marcus') {
+            context += `Respond as Marcus, the performance expert - focus on optimization, efficiency, and scalability concerns.\n\n`;
+        } else if (mentorProfile.name === 'Sophia') {
+            context += `Respond as Sophia, the code quality guru - emphasize clean code, maintainability, and best practices.\n\n`;
+        }
+
+        context += `Analyze this code change:\n\n`;
+        
+        // Add pattern analysis findings if any
+        if (analysisData.patternAnalysis?.issues?.length > 0) {
+            context += "Pattern Analysis Findings:\n";
+            analysisData.patternAnalysis.issues.forEach((issue: any, index: number) => {
+                context += `${index + 1}. ${issue.message} (${issue.severity}, confidence: ${issue.confidence}%)\n`;
+            });
+            context += "\n";
+        }
+
+        // Add AST analysis findings if any
+        if (analysisData.astAnalysis?.issues?.length > 0) {
+            context += "AST Analysis Findings:\n";
+            analysisData.astAnalysis.issues.forEach((issue: any, index: number) => {
+                context += `${index + 1}. ${issue.type}: ${issue.message}\n`;
+            });
+            context += "\n";
+        }
+
+        // Add diff context
+        if (analysisData.diff?.length > 0) {
+            context += "Code Changes:\n";
+            analysisData.diff.forEach((change: any) => {
+                if (change.added) {
+                    context += `+ ${change.value.trim()}\n`;
+                } else if (change.removed) {
+                    context += `- ${change.value.trim()}\n`;
+                }
+            });
+        }
+
+        context += `\nRespond in character as ${mentorProfile.name}. Start your response with "${mentorProfile.name}:" and provide persona-appropriate advice. Focus on the most critical issue and provide specific, actionable guidance in your characteristic style.`;
+        return context;
+    }
+
+    private async displayMentorResponse(aiResponse: any, mentorProfile: any, document: vscode.TextDocument, analysisData: any) {
+        // CodeWatcher sends AI mentor messages to CHAT PANEL only
+        // Format as a conversational message for the chat panel
+        const mentorMessage = {
+            type: 'insight' as const,
+            mentor: mentorProfile.name,
+            message: aiResponse.content || aiResponse.message || this.extractMentorMessage(aiResponse),
+            content: aiResponse.content || aiResponse.message || this.extractMentorMessage(aiResponse),
+            fileName: analysisData.fileName,
+            language: analysisData.language,
+            timestamp: new Date().toISOString(),
+            confidence: aiResponse.confidence || 85,
+            analysisType: 'deep_review',
+            issues: analysisData.patternAnalysis?.issues || [],
+            suggestions: aiResponse.suggestions || []
+        };
+
+        console.log(`[CodeWatcher] 💬 Sending mentor message to chat panel: ${mentorMessage.content?.substring(0, 100)}...`);
+        
+        // Send to chat panel (not consolidated analysis)
+        if (this.aiMentorProvider) {
+            this.aiMentorProvider.addMessage(mentorMessage);
+        }
+    }
+
+    private extractMentorMessage(aiResponse: any): string {
+        // Extract the actual mentor message from AI response
+        if (typeof aiResponse === 'string') {
+            return aiResponse;
+        }
+        
+        if (aiResponse.content) {
+            return aiResponse.content;
+        }
+        
+        if (aiResponse.message) {
+            return aiResponse.message;
+        }
+        
+        if (aiResponse.insights && aiResponse.insights.length > 0) {
+            return aiResponse.insights.join(' ');
+        }
+        
+        if (aiResponse.suggestions && aiResponse.suggestions.length > 0) {
+            return aiResponse.suggestions.join(' ');
+        }
+        
+        return "Let me analyze your code changes and provide guidance.";
+    }
+
+    // Removed - now handled by DiagnosticsManager
+
+    private calculatePriority(aiResponse: any): 'critical' | 'high' | 'medium' | 'low' {
+        const warningCount = aiResponse.warnings?.length || 0;
+        const confidence = aiResponse.confidence || 0;
+        
+        if (warningCount > 2 && confidence > 90) return 'critical';
+        if (warningCount > 1 && confidence > 80) return 'high';
+        if (warningCount > 0 || confidence > 70) return 'medium';
+        return 'low';
+    }
+
+    private displayFallbackAnalysis(analysisData: any) {
+        // Fallback to consolidated analysis if AI fails
+        if (this.aiMentorProvider) {
+            this.aiMentorProvider.addConsolidatedAnalysis(analysisData);
+        }
+    }
+
     private truncateForContext(content: string, maxLength: number = 3000): string {
         if (content.length <= maxLength) {
             return content;
@@ -324,11 +584,26 @@ export class CodeWatcher {
         return truncated + '\n\n[Content truncated to stay within context limits]';
     }
     
+    private getContextAroundPosition(document: vscode.TextDocument, position: vscode.Position): string {
+        const startLine = Math.max(0, position.line - 3);
+        const endLine = Math.min(document.lineCount - 1, position.line + 3);
+        
+        let context = '';
+        for (let i = startLine; i <= endLine; i++) {
+            const lineText = document.lineAt(i).text;
+            const marker = i === position.line ? ' >>> ' : '     ';
+            context += `${i + 1}${marker}${lineText}\n`;
+        }
+        
+        return context;
+    }
+
     // Method to adjust throttling based on provider
     setProviderSpecificThrottling(provider: string) {
         if (provider === 'openai') {
-            this.debounceDelay = 5000; // 5 seconds for OpenAI
-            this.cursorMoveThrottle = 30000; // 30 seconds for cursor moves
+            this.debounceDelay = 10000; // 10 seconds for OpenAI
+            this.cursorMoveThrottle = 60000; // 60 seconds for cursor moves
+            this.analysisThrottle = 20000; // 20 seconds for analysis
             this.analysisThrottle = 10000; // 10 seconds for analysis
         } else {
             this.debounceDelay = 2000; // 2 seconds for Gemini

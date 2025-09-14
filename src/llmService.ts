@@ -75,20 +75,76 @@ export class LLMService {
     }
 
     async sendMessage(message: MentorMessage): Promise<MentorResponse | null> {
+        const requestId = Math.random().toString(36).substr(2, 9);
+        const startTime = Date.now();
+        
+        console.log(`[LLM-${requestId}] 🚀 Starting LLM request for ${message.type}`);
+        console.log(`[LLM-${requestId}] 📋 Message details:`, {
+            type: message.type,
+            fileName: message.fileName,
+            language: message.language,
+            contentLength: message.code?.length || message.currentContent?.length || message.content?.length || 0,
+            hasAnalysis: !!message.analysis
+        });
+        
         const config = vscode.workspace.getConfiguration('aiMentor');
         const provider = config.get<string>('llmProvider', 'gemini');
         
-        // Use Gemini by default (no rate limiting needed for Gemini)
-        if (provider === 'gemini' && this.geminiService) {
-            return await this.geminiService.sendMessage(message, this.profileManager);
+        try {
+            let response: MentorResponse | null = null;
+            
+            console.log(`[LLM-${requestId}] 🔄 Using provider: ${provider}`);
+            
+            switch (provider) {
+                case 'openai':
+                    console.log(`[LLM-${requestId}] 🤖 Sending to OpenAI with rate limiting...`);
+                    response = await this.sendOpenAIMessageWithRateLimit(message);
+                    break;
+                case 'gemini':
+                    console.log(`[LLM-${requestId}] 🔮 Sending to Gemini service...`);
+                    if (this.geminiService) {
+                        const geminiStartTime = Date.now();
+                        response = await this.geminiService.sendMessage(message);
+                        const geminiDuration = Date.now() - geminiStartTime;
+                        console.log(`[LLM-${requestId}] ✅ Gemini response received in ${geminiDuration}ms`);
+                    } else {
+                        console.warn(`[LLM-${requestId}] ⚠️ Gemini service not initialized`);
+                    }
+                    break;
+                default:
+                    console.warn(`[LLM-${requestId}] ⚠️ Unknown provider: ${provider}`);
+            }
+            
+            const totalDuration = Date.now() - startTime;
+            
+            if (response) {
+                console.log(`[LLM-${requestId}] ✅ LLM request completed successfully in ${totalDuration}ms`);
+                console.log(`[LLM-${requestId}] 📊 Response summary:`, {
+                    messageLength: response.message?.length || 0,
+                    suggestionsCount: response.suggestions?.length || 0,
+                    warningsCount: response.warnings?.length || 0,
+                    codeSnippetsCount: response.codeSnippets?.length || 0,
+                    type: response.type,
+                    confidence: response.confidence
+                });
+            } else {
+                console.warn(`[LLM-${requestId}] ⚠️ LLM request completed but returned null response in ${totalDuration}ms`);
+            }
+            
+            return response;
+        } catch (error) {
+            const totalDuration = Date.now() - startTime;
+            console.error(`[LLM-${requestId}] ❌ LLM request failed after ${totalDuration}ms:`, error);
+            console.error(`[LLM-${requestId}] 📋 Error details:`, {
+                name: error instanceof Error ? error.name : 'Unknown',
+                message: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined,
+                provider: provider
+            });
+            
+            // Re-throw the error to be handled by the calling code
+            throw error;
         }
-        
-        // Apply rate limiting for OpenAI
-        if (provider === 'openai' && this.openai) {
-            return await this.sendOpenAIMessageWithRateLimit(message);
-        }
-        
-        return null;
     }
     
     private async sendOpenAIMessageWithRateLimit(message: MentorMessage): Promise<MentorResponse | null> {
@@ -228,6 +284,9 @@ export class LLMService {
                         case 'trace_execution':
                             basePrompt = activeProfile.prompts.explanationPrompt;
                             break;
+                        case 'code_analysis':
+                            basePrompt = activeProfile.prompts.reviewPrompt; // Use review prompt for code analysis
+                            break;
                         default:
                             basePrompt = activeProfile.prompts.systemPrompt;
                     }
@@ -346,6 +405,17 @@ ${message.content}
 \`\`\`
 
 Welcome them and provide any initial observations or suggestions about their new file.`;
+
+            case 'code_analysis':
+                return `Please analyze this ${message.language} code from ${message.fileName}:
+
+\`\`\`${message.language}
+${message.code || message.currentContent}
+\`\`\`
+
+Analysis data: ${JSON.stringify(message.analysis, null, 2)}
+
+Provide a comprehensive code analysis including potential issues, suggestions for improvement, code quality assessment, and any best practices recommendations.`;
 
             default:
                 return `User action: ${message.type}. Please provide appropriate guidance.`;

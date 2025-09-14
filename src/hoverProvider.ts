@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ProfileManager, MentorProfile } from './profileManager';
 import { ASTAnalyzer } from './astAnalyzer';
 import { MentorPersonalityService } from './mentorPersonality';
+import { DiagnosticsManager } from './diagnosticsManager';
 import { interactionTracker } from './interactionTracker';
 
 interface CodeElementAnalysis {
@@ -30,7 +31,8 @@ export class MentorHoverProvider implements vscode.HoverProvider {
 
     constructor(
         private profileManager: ProfileManager,
-        private astAnalyzer: ASTAnalyzer
+        private astAnalyzer: ASTAnalyzer,
+        private diagnosticsManager?: DiagnosticsManager
     ) {
         this.personalityService = new MentorPersonalityService();
     }
@@ -45,62 +47,70 @@ export class MentorHoverProvider implements vscode.HoverProvider {
             return undefined; // No active mentor, no hover.
         }
 
-        const wordRange = document.getWordRangeAtPosition(position);
-        const line = document.lineAt(position.line);
-        const lineText = line.text;
+        // Only show AI mentor diagnostics - no hardcoded fallback
+        const mentorDiagnostics = this.diagnosticsManager?.getMentorDiagnosticsAt(document, position) || [];
         
-        if (!wordRange) return undefined;
+        if (mentorDiagnostics.length > 0) {
+            // Show AI mentor diagnostics with enhanced styling
+            return this.createAIMentorHover(mentorDiagnostics, position);
+        }
 
-        const word = document.getText(wordRange);
-        
-        // Get comprehensive file analysis
-        const fileAnalysis = this.analyzeFullFile(document);
-        const localContext = this.getContextAroundPosition(document, position);
-        
-        // Analyze the code context for architecture and styling suggestions
-        const suggestions = await this.generateSuggestions(
-            word,
-            lineText,
-            localContext,
-            document.languageId,
-            activeProfile,
-            fileAnalysis,
-            position
-        );
+        // No AI diagnostics at this position - return undefined
+        // All analysis should go through the AI flow in codeWatcher
+        return undefined;
+    }
 
-        if (suggestions.length === 0) return undefined;
-
-        // Show hover tooltip with suggestions directly
+    private createAIMentorHover(mentorDiagnostics: any[], position: vscode.Position): vscode.Hover {
         const markdown = new vscode.MarkdownString();
         markdown.isTrusted = true;
         markdown.supportHtml = true;
 
-        // Add mentor header with image avatar
-        let avatarMarkdown = '';
-        if (activeProfile.avatar && activeProfile.avatar.startsWith('http')) {
-            avatarMarkdown = `<img src="${activeProfile.avatar}" width="24" height="24" style="border-radius: 50%; vertical-align: middle;" alt="${activeProfile.name}'s avatar">`;
-        } else {
-            avatarMarkdown = activeProfile.avatar || '🤖';
-        }
-        markdown.appendMarkdown(`### ${avatarMarkdown} ${activeProfile.name}\n\n`);
-        
-        // Add suggestions to hover tooltip
-        suggestions.forEach((suggestion, index) => {
-            const cleanSuggestion = suggestion.replace(/\*\*/g, '').replace(/🔍|⚡|🧪|🏗️|🐧|⚛️|📦|🚀|🎨|🔥|🌟|✨|📏|📝|🎯/g, '').trim();
-            markdown.appendMarkdown(`${index + 1}. ${cleanSuggestion}\n\n`);
+        // Group diagnostics by mentor
+        const diagnosticsByMentor = new Map<string, any[]>();
+        mentorDiagnostics.forEach(diag => {
+            const mentorKey = `${diag.mentorId}-${diag.mentorName}`;
+            if (!diagnosticsByMentor.has(mentorKey)) {
+                diagnosticsByMentor.set(mentorKey, []);
+            }
+            diagnosticsByMentor.get(mentorKey)!.push(diag);
         });
 
-        // Log hover interaction for summary emails
-        try {
-            interactionTracker.logHover(activeProfile.id, {
-                fileName: document.fileName,
-                position: { line: position.line, character: position.character },
-                word,
-                suggestions
-            });
-        } catch {}
+        // Display each mentor's insights
+        diagnosticsByMentor.forEach((diagnostics, mentorKey) => {
+            const firstDiag = diagnostics[0];
+            
+            // Add mentor header with avatar and blue styling
+            let avatarMarkdown = '';
+            if (firstDiag.mentorAvatar && firstDiag.mentorAvatar.startsWith('http')) {
+                avatarMarkdown = `<img src="${firstDiag.mentorAvatar}" width="24" height="24" style="border-radius: 50%; vertical-align: middle;" alt="${firstDiag.mentorName}'s avatar">`;
+            } else {
+                avatarMarkdown = firstDiag.mentorAvatar || '🤖';
+            }
+            
+            markdown.appendMarkdown(`### <span style="color: #007ACC;">${avatarMarkdown} ${firstDiag.mentorName}</span>\n\n`);
+            
+            // Add confidence indicator if available
+            if (firstDiag.confidence) {
+                markdown.appendMarkdown(`*Confidence: ${Math.round(firstDiag.confidence * 100)}%*\n\n`);
+            }
 
-        return new vscode.Hover(markdown, wordRange);
+            // Add each diagnostic message
+            diagnostics.forEach((diag, index) => {
+                const icon = diag.severity === 1 ? '⚠️' : 'ℹ️'; // Warning vs Info
+                markdown.appendMarkdown(`${icon} ${diag.message}\n\n`);
+            });
+
+            // Add suggestions if available
+            if (firstDiag.suggestions && firstDiag.suggestions.length > 0) {
+                markdown.appendMarkdown(`**Suggestions:**\n`);
+                firstDiag.suggestions.forEach((suggestion: string, index: number) => {
+                    markdown.appendMarkdown(`${index + 1}. ${suggestion}\n`);
+                });
+                markdown.appendMarkdown(`\n`);
+            }
+        });
+
+        return new vscode.Hover(markdown);
     }
 
 
@@ -147,39 +157,10 @@ export class MentorHoverProvider implements vscode.HoverProvider {
         return suggestions.filter(s => s.length > 0);
     }
 
+    // Removed - all contextual analysis now goes through AI mentor flow in codeWatcher
     private analyzeContextualIssues(word: string, lineText: string, context: string, languageId: string): string[] {
-        const issues: string[] = [];
-        
-        // Check for infinite loop patterns
-        if (lineText.includes('while') && context.includes('while')) {
-            const whileBlock = this.extractWhileBlock(context, lineText);
-            if (whileBlock && !this.hasLoopIncrement(whileBlock)) {
-                issues.push("Potential infinite loop detected - missing loop variable increment/decrement");
-            }
-        }
-        
-        // Check for array access patterns
-        if (word === 'arr' && lineText.includes('[')) {
-            if (context.includes('function') && !context.includes('if (!arr') && !context.includes('if (arr')) {
-                issues.push("Consider adding null/undefined check for array parameter before accessing");
-            }
-        }
-        
-        // Check for array length access
-        if (lineText.includes('.length') && word === 'arr') {
-            if (!context.includes('if (!arr') && !context.includes('if (arr')) {
-                issues.push("Array length access without null check - consider defensive programming");
-            }
-        }
-        
-        // Check for missing semicolons in TypeScript/JavaScript
-        if ((languageId === 'typescript' || languageId === 'javascript') && 
-            !lineText.trim().endsWith(';') && 
-            (lineText.includes('return') || lineText.includes('let') || lineText.includes('const'))) {
-            issues.push("Missing semicolon - add ';' for explicit statement termination");
-        }
-        
-        return issues;
+        // No hardcoded issues - everything should go through AI analysis
+        return [];
     }
 
     private extractWhileBlock(context: string, currentLine: string): string | null {

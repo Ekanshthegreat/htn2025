@@ -301,7 +301,6 @@
         let html = `
             <div class="consolidated-message-header">
                 <div class="mentor-info-inline">
-                    <img class="mentor-avatar-small" src="${msg.mentorAvatar}" alt="${msg.mentorName}" onerror="this.src='https://avatars.githubusercontent.com/u/60302907?v=4'" />
                     <div class="mentor-details-inline">
                         <span class="mentor-name">${msg.mentorName}</span>
                         <div class="analysis-types">${analysisTypesHtml}</div>
