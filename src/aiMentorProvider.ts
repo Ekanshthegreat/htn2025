@@ -467,82 +467,74 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
     }
     // Generate real AI suggestions for current code
     public async addCodeAnalysis() {
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-          this.addMessage({
-            message: "No active editor found. Please open a file to analyze.",
-            type: "warning",
-            suggestions: ["Open a code file in the editor", "Select some code to analyze"]
-          });
-          return;
-        }
-      
-        const document = editor.document;
-        const selection = editor.selection;
-        const code = selection.isEmpty ? document.getText() : document.getText(selection);
-      
-        if (!code.trim()) {
-          this.addMessage({
-            message: "No code found to analyze. The file appears to be empty.",
-            type: "warning",
-            suggestions: ["Write some code first", "Select a code snippet to analyze"]
-          });
-          return;
-        }
-      
-        // Show typing indicator
-        this.updateWebview();
-        if (this._view) {
-          this._view.webview.postMessage({ type: 'showTyping', mentor: 'AI Mentor' });
-        }
-      
-        try {
-          // Use LLM service (now defaults to Gemini) for real analysis
-          const response = await this.llmService.sendMessage({
-            type: 'code_analysis',
-            fileName: document.fileName,
-            language: document.languageId,
-            code: code,
-            currentContent: code,
-            analysis: {
-              complexity: this.calculateComplexity(code),
-              patterns: this.detectPatterns(code, document.languageId),
-              potentialIssues: this.detectPotentialIssues(code)
-            }
-          });
-      
-          if (response) {
-            this.addMessage(response);
-          } else {
-            // Fallback response with more detailed analysis
-            this.addMessage({
-              message: `🔍 Analyzed ${document.languageId} code in ${document.fileName}. Here's what I found:`,
-              type: "explanation",
-              suggestions: this.generateCodeSuggestions(code, document.languageId),
-              insights: this.generateCodeInsights(code, document.languageId),
-              warnings: this.detectWarnings(code, document.languageId),
-              codeSnippets: this.generateImprovementSnippets(code, document.languageId)
-            });
-          }
-        } catch (error: any) {
-          console.error('Code analysis error:', error);
-          this.addMessage({
-            message: "❌ Error analyzing code. Please check your Gemini API configuration.",
-            type: "warning",
-            suggestions: [
-              "Set your Gemini API key: aiMentor.apiKey",
-              "Ensure llmProvider is set to 'gemini'",
-              "Try again in a moment"
-            ]
-          });
-        } finally {
-          // Hide typing indicator
-          if (this._view) {
-            this._view.webview.postMessage({ type: 'hideTyping' });
-          }
-        }
-      }
-    
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    this.addMessage({
+      message: "No active editor found. Please open a file to analyze.",
+      type: "warning",
+      suggestions: ["Open a code file in the editor", "Select some code to analyze"],
+    });
+    return;
+  }
+
+  const document = editor.document;
+  const selection = editor.selection;
+  const code = selection.isEmpty ? document.getText() : document.getText(selection);
+
+  if (!code.trim()) {
+    this.addMessage({
+      message: "No code found to analyze. The file appears to be empty.",
+      type: "warning",
+      suggestions: ["Write some code first", "Select a code snippet to analyze"],
+    });
+    return;
+  }
+
+  this.updateWebview();
+  this._view?.webview.postMessage({ type: "showTyping", mentor: "AI Mentor" });
+
+  try {
+    const response = await this.llmService.sendMessage({
+      type: "code_analysis",
+      fileName: document.fileName,
+      language: document.languageId,
+      code,
+      currentContent: code,
+      analysis: {
+        complexity: this.calculateComplexity(code),
+        patterns: this.detectPatterns(code, document.languageId),
+        potentialIssues: this.detectPotentialIssues(code),
+      },
+    });
+
+    if (response) {
+      this.addMessage(response);
+    } else {
+      this.addMessage({
+        message: `🔍 Analyzed ${document.languageId} code in ${document.fileName}. Here's what I found:`,
+        type: "explanation",
+        suggestions: this.generateCodeSuggestions(code, document.languageId),
+        insights: this.generateCodeInsights(code, document.languageId),
+        warnings: this.detectWarnings(code, document.languageId),
+        codeSnippets: this.generateImprovementSnippets(code, document.languageId),
+      });
+    }
+  } catch (error: unknown) {
+    console.error("Code analysis error:", error);
+    this.addMessage({
+      message: "❌ Error analyzing code. Please check your Gemini API configuration.",
+      type: "warning",
+      suggestions: [
+        "Set your Gemini API key: aiMentor.apiKey",
+        "Ensure llmProvider is set to 'gemini'",
+        "Try again in a moment",
+      ],
+    });
+  } finally {
+    this._view?.webview.postMessage({ type: "hideTyping" });
+  }
+}
+
     private calculateComplexity(code: string): string {
         const lines = code.split('\n').length;
         const functions = (code.match(/function|def |class |const \w+\s*=/g) || []).length;
