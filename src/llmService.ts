@@ -4,18 +4,18 @@ import { GeminiService } from './geminiService';
 import { ProfileManager, MentorProfile } from './profileManager';
 
 export interface MentorMessage {
-    type: 'code_changed' | 'cursor_moved' | 'file_created' | 'start_debugging' | 'trace_execution';
+    type: 'code_changed' | 'cursor_moved' | 'file_created' | 'start_debugging' | 'trace_execution' | 'code_analysis';
     fileName?: string;
     language?: string;
+    code?: string;
     content?: string;
-    diff?: any[];
+    diff?: any;
     analysis?: any;
     previousContent?: string;
     currentContent?: string;
     position?: { line: number; character: number };
     currentLine?: string;
     context?: string;
-    code?: string;
     ast?: any;
     executionFlow?: any;
 }
@@ -34,6 +34,7 @@ export interface MentorResponse {
 
 export class LLMService {
     private openai: OpenAI | null = null;
+    private geminiService: GeminiService | null = null;
     private conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
     private profileManager?: any;
 
@@ -44,7 +45,7 @@ export class LLMService {
 
     private initializeProvider() {
         const config = vscode.workspace.getConfiguration('aiMentor');
-        const provider = config.get<string>('llmProvider', 'openai');
+        const provider = config.get<string>('llmProvider', 'gemini');
         const apiKey = config.get<string>('apiKey');
 
         if (!apiKey) {
@@ -56,11 +57,31 @@ export class LLMService {
             case 'openai':
                 this.openai = new OpenAI({ apiKey });
                 break;
+            case 'gemini':
+                this.geminiService = new GeminiService();
+                break;
             // Add other providers as needed
         }
     }
 
     async sendMessage(message: MentorMessage): Promise<MentorResponse | null> {
+        const config = vscode.workspace.getConfiguration('aiMentor');
+        const provider = config.get<string>('llmProvider', 'gemini');
+        
+        // Use Gemini by default
+        if (provider === 'gemini' && this.geminiService) {
+            return await this.geminiService.sendMessage(message, this.profileManager);
+        }
+        
+        // Fallback to OpenAI if configured
+        if (provider === 'openai' && this.openai) {
+            return await this.sendOpenAIMessage(message);
+        }
+        
+        return null;
+    }
+    
+    private async sendOpenAIMessage(message: MentorMessage): Promise<MentorResponse | null> {
         if (!this.openai) {
             return null;
         }

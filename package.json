@@ -53,6 +53,11 @@
         "category": "AI Mentor"
       },
       {
+        "command": "aiMentor.analyzeCode",
+        "title": "🔍 Analyze Code with AI",
+        "category": "AI Mentor"
+      },
+      {
         "command": "aiMentor.sendSummary",
         "title": "📧 Send Interaction Summary",
         "category": "AI Mentor"
@@ -81,17 +86,12 @@
       "properties": {
         "aiMentor.llmProvider": {
           "type": "string",
-          "default": "gemini",
           "enum": [
             "gemini",
-            "openai",
-            "anthropic"
+            "openai"
           ],
-          "description": "LLM provider to use for AI mentor"
-        },
-        "aiMentor.apiKey": {
-          "type": "string",
-          "description": "API key for the selected LLM provider"
+          "default": "gemini",
+          "description": "LLM provider to use for AI analysis"
         },
         "aiMentor.githubToken": {
           "type": "string",

@@ -146,20 +146,17 @@ export class CodeWatcher {
         // Analyze the changes
         const analysis = await this.astAnalyzer.analyzeChanges(previousAST, currentAST);
 
-        // Send to LLM for natural language explanation
-        const response = await this.llmService.sendMessage({
-            type: 'code_changed',
-            fileName: document.fileName,
-            language: document.languageId,
-            diff: changes,
-            analysis: analysis,
-            previousContent: previousContent,
-            currentContent: currentContent
-        });
-
-        // Display response in UI if available
-        if (response && this.aiMentorProvider) {
-            this.aiMentorProvider.addMessage(response);
+        // Only provide local analysis for live feedback to avoid rate limiting
+        // Gemini calls are reserved for manual "Analyze Code" button
+        if (this.aiMentorProvider) {
+            this.aiMentorProvider.addLocalAnalysis({
+                fileName: document.fileName,
+                language: document.languageId,
+                diff: changes,
+                analysis: analysis,
+                previousContent: previousContent,
+                currentContent: currentContent
+            });
         }
 
         // Log code change event for summaries (aggregate added/removed lines)

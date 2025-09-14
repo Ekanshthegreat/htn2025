@@ -4,6 +4,7 @@
     // DOM elements
     const messagesContainer = document.getElementById('messages');
     const clearBtn = document.getElementById('clearBtn');
+    const analyzeBtn = document.getElementById('analyzeBtn');
     const statusText = document.getElementById('statusText');
     const mentorSelect = document.getElementById('mentorSelect');
     const mentorAvatar = document.getElementById('mentorAvatar');
@@ -58,6 +59,12 @@
             clearMessages();
             showMentorReaction('reset');
         }
+    });
+
+    analyzeBtn.addEventListener('click', () => {
+        console.log('Analyze button clicked');
+        vscode.postMessage({ type: 'analyzeCode' });
+        updateStatus('Analyzing your code with AI...');
     });
 
     // Enhanced mentor dropdown selection

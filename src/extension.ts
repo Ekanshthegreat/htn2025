@@ -264,6 +264,11 @@ export function activate(context: vscode.ExtensionContext) {
         }
     }
     
+    const analyzeCodeCommand = vscode.commands.registerCommand('aiMentor.analyzeCode', () => {
+        aiMentorProvider.addCodeAnalysis();
+        vscode.window.showInformationMessage('Analyzing your code with AI...');
+    });
+
     const sendSummaryCommand = vscode.commands.registerCommand('aiMentor.sendSummary', async () => {
         const activeProfile = profileManager.getActiveProfile();
 
@@ -332,6 +337,7 @@ export function activate(context: vscode.ExtensionContext) {
         selectProfileCommand,
         createGitHubMentorCommand,
         manageProfilesCommand,
+        analyzeCodeCommand,
         sendSummaryCommand
     );
     

@@ -51,6 +51,9 @@ class AIMentorProvider {
                 case 'switchProfile':
                     this.switchProfile(data.profileId);
                     break;
+                case 'analyzeCode':
+                    this.addCodeAnalysis();
+                    break;
             }
         });
         // Send initial profile data when webview is ready
@@ -63,70 +66,60 @@ class AIMentorProvider {
         // For now, we'll add a method to receive messages
     }
     addMessage(response) {
-        console.log('=== AIMentorProvider.addMessage called ===');
-        console.log('Response:', response);
-        console.log('Current messages count:', this.messages.length);
-        this.messages.push(response);
-        console.log('Messages after push:', this.messages.length);
-        const activeProfile = this.profileManager?.getActiveProfile();
-        if (activeProfile) {
-            interactionTracker_1.interactionTracker.logInteraction({
-                mentorId: activeProfile.id,
-                timestamp: new Date(),
-                type: 'advice_provided',
-                data: response
-            });
+        if (!response.message || !response.type) {
+            console.error('Invalid response format:', response);
+            return;
         }
+        this.messages.push(response);
+        console.log('Added message to AI Mentor:', response.message.substring(0, 100) + '...');
         this.updateWebview();
     }
+    addLocalAnalysis(data) {
+        const { fileName, language, diff, analysis } = data;
+        // Generate quick local insights without API calls
+        const addedLines = diff.filter((d) => d.added).length;
+        const removedLines = diff.filter((d) => d.removed).length;
+        let message = `📝 Code updated in ${fileName.split('/').pop()}`;
+        const insights = [];
+        const suggestions = [];
+        if (addedLines > 0)
+            insights.push(`Added ${addedLines} lines`);
+        if (removedLines > 0)
+            insights.push(`Removed ${removedLines} lines`);
+        // Basic pattern detection
+        const content = data.currentContent || '';
+        if (content.includes('console.log'))
+            suggestions.push('Consider removing debug statements before production');
+        if (content.includes('TODO') || content.includes('FIXME'))
+            suggestions.push('Address TODO/FIXME comments');
+        this.addMessage({
+            message,
+            type: 'insight',
+            insights,
+            suggestions
+        });
+    }
     updateWebview() {
-        console.log('=== AIMentorProvider.updateWebview called ===');
-        console.log('View exists:', !!this._view);
-        console.log('Messages to send:', this.messages.length, this.messages);
         if (this._view) {
-            this._view.webview.postMessage({
-                type: 'updateMessages',
-                messages: this.messages
+            const formattedMessages = this.messages.map(msg => {
+                // Ensure message is a string, not an object
+                let messageText = msg.message;
+                if (typeof messageText === 'object') {
+                    messageText = JSON.stringify(messageText, null, 2);
+                }
+                return {
+                    message: messageText || 'No message content',
+                    type: msg.type || 'explanation',
+                    suggestions: msg.suggestions || [],
+                    warnings: msg.warnings || [],
+                    codeSnippets: msg.codeSnippets || [],
+                    confidence: msg.confidence,
+                    learningOpportunity: msg.learningOpportunity,
+                    insights: msg.insights || [],
+                    predictions: msg.predictions || []
+                };
             });
-            console.log('Posted updateMessages to webview');
-            // Also send profile data if available
-            if (this.profileManager) {
-                try {
-                    const profiles = this.profileManager.getAllProfiles();
-                    const activeProfile = this.profileManager.getActiveProfile();
-                    console.log('=== BACKEND PROFILE UPDATE ===');
-                    console.log('Total profiles found:', profiles.length);
-                    console.log('Active profile:', activeProfile?.name || 'None');
-                    if (profiles.length > 0) {
-                        console.log('Profile details:');
-                        profiles.forEach((profile, index) => {
-                            console.log(`  ${index + 1}. ${profile.name} (${profile.id}) - GitHub: ${profile.githubUsername || 'N/A'}`);
-                        });
-                    }
-                    const profilesForWebview = profiles.map(p => ({
-                        id: p.id,
-                        name: p.name,
-                        githubUsername: p.githubUsername,
-                        avatar: p.avatar,
-                        personality: p.personality,
-                        codeStylePreferences: p.codeStylePreferences,
-                        prompts: p.prompts,
-                        githubInsights: p.githubInsights,
-                        lastUpdated: p.lastUpdated
-                    }));
-                    console.log('Sending to webview:', profilesForWebview);
-                    this._view.webview.postMessage({
-                        type: 'updateProfiles',
-                        profiles: profilesForWebview,
-                        activeProfileId: activeProfile?.id,
-                        activeMentorName: activeProfile?.name || 'AI Mentor'
-                    });
-                    console.log('=== END BACKEND PROFILE UPDATE ===');
-                }
-                catch (error) {
-                    console.error('Error updating webview with profiles:', error);
-                }
-            }
+            this._view.webview.postMessage({ type: 'updateMessages', messages: formattedMessages });
         }
     }
     clearHistory() {
@@ -290,6 +283,170 @@ class AIMentorProvider {
             }
         }
     }
+    // Generate real AI suggestions for current code
+    async addCodeAnalysis() {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            this.addMessage({
+                message: "No active editor found. Please open a file to analyze.",
+                type: "warning",
+                suggestions: ["Open a code file in the editor", "Select some code to analyze"]
+            });
+            return;
+        }
+        const document = editor.document;
+        const selection = editor.selection;
+        const code = selection.isEmpty ? document.getText() : document.getText(selection);
+        if (!code.trim()) {
+            this.addMessage({
+                message: "No code found to analyze. The file appears to be empty.",
+                type: "warning",
+                suggestions: ["Write some code first", "Select a code snippet to analyze"]
+            });
+            return;
+        }
+        // Show typing indicator
+        this.updateWebview();
+        if (this._view) {
+            this._view.webview.postMessage({ type: 'showTyping', mentor: 'AI Mentor' });
+        }
+        try {
+            // Use LLM service (now defaults to Gemini) for real analysis
+            const response = await this.llmService.sendMessage({
+                type: 'code_analysis',
+                fileName: document.fileName,
+                language: document.languageId,
+                code: code,
+                currentContent: code,
+                analysis: {
+                    complexity: this.calculateComplexity(code),
+                    patterns: this.detectPatterns(code, document.languageId),
+                    potentialIssues: this.detectPotentialIssues(code)
+                }
+            });
+            if (response) {
+                this.addMessage(response);
+            }
+            else {
+                // Fallback response with more detailed analysis
+                this.addMessage({
+                    message: `🔍 Analyzed ${document.languageId} code in ${document.fileName}. Here's what I found:`,
+                    type: "explanation",
+                    suggestions: this.generateCodeSuggestions(code, document.languageId),
+                    insights: this.generateCodeInsights(code, document.languageId),
+                    warnings: this.detectWarnings(code, document.languageId),
+                    codeSnippets: this.generateImprovementSnippets(code, document.languageId)
+                });
+            }
+        }
+        catch (error) {
+            console.error('Code analysis error:', error);
+            this.addMessage({
+                message: "❌ Error analyzing code. Please check your Gemini API configuration.",
+                type: "warning",
+                suggestions: ["Set your Gemini API key: aiMentor.apiKey", "Ensure llmProvider is set to 'gemini'", "Try again in a moment"]
+            });
+        }
+        finally {
+            // Hide typing indicator
+            if (this._view) {
+                this._view.webview.postMessage({ type: 'hideTyping' });
+            }
+        }
+    }
+    calculateComplexity(code) {
+        const lines = code.split('\n').length;
+        const functions = (code.match(/function|def |class |const \w+\s*=/g) || []).length;
+        const conditions = (code.match(/if|else|switch|case|while|for/g) || []).length;
+        const complexity = lines + functions * 2 + conditions * 3;
+        if (complexity < 20)
+            return 'low';
+        if (complexity < 50)
+            return 'medium';
+        return 'high';
+    }
+    detectPatterns(code, language) {
+        const patterns = [];
+        if (code.includes('function') || code.includes('def '))
+            patterns.push('function_definition');
+        if (code.includes('class '))
+            patterns.push('class_definition');
+        if (code.includes('const ') || code.includes('let ') || code.includes('var '))
+            patterns.push('variable_declaration');
+        if (code.includes('if') || code.includes('else'))
+            patterns.push('conditional_logic');
+        if (code.includes('for') || code.includes('while'))
+            patterns.push('loops');
+        if (code.includes('try') || code.includes('catch'))
+            patterns.push('error_handling');
+        if (code.includes('async') || code.includes('await'))
+            patterns.push('async_programming');
+        return patterns;
+    }
+    detectPotentialIssues(code) {
+        const issues = [];
+        if (code.includes('console.log'))
+            issues.push('debug_statements');
+        if (code.includes('TODO') || code.includes('FIXME'))
+            issues.push('todo_comments');
+        if (!code.includes('try') && code.includes('await'))
+            issues.push('unhandled_async_errors');
+        if (code.split('\n').some(line => line.length > 120))
+            issues.push('long_lines');
+        return issues;
+    }
+    generateCodeSuggestions(code, language) {
+        const suggestions = [];
+        if (code.includes('console.log'))
+            suggestions.push('Consider using a proper logging library instead of console.log');
+        if (!code.includes('//') && !code.includes('/*'))
+            suggestions.push('Add comments to explain complex logic');
+        if (code.includes('var '))
+            suggestions.push('Use const/let instead of var for better scoping');
+        if (language === 'javascript' && !code.includes('use strict'))
+            suggestions.push('Consider adding "use strict" directive');
+        return suggestions;
+    }
+    generateCodeInsights(code, language) {
+        const insights = [];
+        const lines = code.split('\n').length;
+        insights.push(`Code contains ${lines} lines`);
+        if (code.includes('async'))
+            insights.push('Uses modern async/await patterns');
+        if (code.includes('class'))
+            insights.push('Object-oriented programming approach');
+        if (code.includes('const'))
+            insights.push('Good use of immutable variables');
+        return insights;
+    }
+    detectWarnings(code, language) {
+        const warnings = [];
+        if (code.includes('eval('))
+            warnings.push('⚠️ eval() usage detected - potential security risk');
+        if (code.includes('innerHTML') && !code.includes('sanitize'))
+            warnings.push('⚠️ innerHTML usage without sanitization');
+        if (language === 'javascript' && code.includes('==') && !code.includes('==='))
+            warnings.push('⚠️ Use === instead of == for strict equality');
+        return warnings;
+    }
+    generateImprovementSnippets(code, language) {
+        const snippets = [];
+        if (code.includes('console.log')) {
+            snippets.push({
+                language: language,
+                code: 'const logger = require("winston");\nlogger.info("Your message here");',
+                explanation: 'Use a proper logging library for production code'
+            });
+        }
+        if (language === 'javascript' && code.includes('var ')) {
+            snippets.push({
+                language: 'javascript',
+                code: 'const myVariable = "value"; // or let for mutable',
+                explanation: 'Use const/let for better scoping and immutability'
+            });
+        }
+        return snippets;
+    }
     _getHtmlForWebview(webview) {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.css'));
@@ -329,6 +486,7 @@ class AIMentorProvider {
                             <select id="mentorSelect" class="mentor-dropdown">
                                 ${mentorOptions}
                             </select>
+                            <button id="analyzeBtn" class="btn btn-primary">Analyze Code</button>
                             <button id="clearBtn" class="btn btn-secondary">Clear</button>
                         </div>
                     </div>

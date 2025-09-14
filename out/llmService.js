@@ -29,16 +29,18 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.LLMService = void 0;
 const vscode = __importStar(require("vscode"));
 const openai_1 = __importDefault(require("openai"));
+const geminiService_1 = require("./geminiService");
 class LLMService {
     constructor(profileManager) {
         this.openai = null;
+        this.geminiService = null;
         this.conversationHistory = [];
         this.profileManager = profileManager;
         this.initializeProvider();
     }
     initializeProvider() {
         const config = vscode.workspace.getConfiguration('aiMentor');
-        const provider = config.get('llmProvider', 'openai');
+        const provider = config.get('llmProvider', 'gemini');
         const apiKey = config.get('apiKey');
         if (!apiKey) {
             vscode.window.showWarningMessage('AI Mentor: Please set your API key in settings');
@@ -48,10 +50,26 @@ class LLMService {
             case 'openai':
                 this.openai = new openai_1.default({ apiKey });
                 break;
+            case 'gemini':
+                this.geminiService = new geminiService_1.GeminiService();
+                break;
             // Add other providers as needed
         }
     }
     async sendMessage(message) {
+        const config = vscode.workspace.getConfiguration('aiMentor');
+        const provider = config.get('llmProvider', 'gemini');
+        // Use Gemini by default
+        if (provider === 'gemini' && this.geminiService) {
+            return await this.geminiService.sendMessage(message, this.profileManager);
+        }
+        // Fallback to OpenAI if configured
+        if (provider === 'openai' && this.openai) {
+            return await this.sendOpenAIMessage(message);
+        }
+        return null;
+    }
+    async sendOpenAIMessage(message) {
         if (!this.openai) {
             return null;
         }

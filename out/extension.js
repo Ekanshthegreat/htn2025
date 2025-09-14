@@ -65,8 +65,6 @@ function activate(context) {
     hoverProvider = new hoverProvider_1.MentorHoverProvider(profileManager, astAnalyzer);
     // Connect codeWatcher to aiMentorProvider for UI updates
     codeWatcher.setAIMentorProvider(aiMentorProvider);
-    // Connect hoverProvider to aiMentorProvider for chat panel updates
-    hoverProvider.setAIMentorProvider(aiMentorProvider);
     // Register the webview provider
     context.subscriptions.push(vscode.window.registerWebviewViewProvider('aiMentorPanel', aiMentorProvider));
     // Register hover provider for all supported languages
@@ -238,6 +236,10 @@ function activate(context) {
             }
         }
     }
+    const analyzeCodeCommand = vscode.commands.registerCommand('aiMentor.analyzeCode', () => {
+        aiMentorProvider.addCodeAnalysis();
+        vscode.window.showInformationMessage('Analyzing your code with AI...');
+    });
     const sendSummaryCommand = vscode.commands.registerCommand('aiMentor.sendSummary', async () => {
         const activeProfile = profileManager.getActiveProfile();
         if (!activeProfile) {
@@ -290,7 +292,7 @@ function activate(context) {
             aiMentorProvider.updateWebview();
         }
     }
-    context.subscriptions.push(activateCommand, deactivateCommand, startDebuggingCommand, traceExecutionCommand, selectProfileCommand, createGitHubMentorCommand, manageProfilesCommand, sendSummaryCommand);
+    context.subscriptions.push(activateCommand, deactivateCommand, startDebuggingCommand, traceExecutionCommand, selectProfileCommand, createGitHubMentorCommand, manageProfilesCommand, analyzeCodeCommand, sendSummaryCommand);
     // Add logging for profile manager initialization
     console.log('ProfileManager initialized with', profileManager.getAllProfiles().length, 'profiles');
     const startupActiveProfile = profileManager.getActiveProfile();

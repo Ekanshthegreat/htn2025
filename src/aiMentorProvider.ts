@@ -41,6 +41,9 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                 case 'switchProfile':
                     this.switchProfile(data.profileId);
                     break;
+                case 'analyzeCode':
+                    this.addCodeAnalysis();
+                    break;
             }
         });
 
@@ -56,82 +59,64 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
     }
 
     public addMessage(response: MentorResponse) {
-        console.log('=== AIMentorProvider.addMessage called ===');
-        console.log('Response:', response);
-        console.log('Current messages count:', this.messages.length);
-        
-        this.messages.push(response);
-
-        const activeProfile = this.profileManager?.getActiveProfile();
-        if (activeProfile) {
-            interactionTracker.logInteraction({
-                mentorId: activeProfile.id,
-                timestamp: new Date(),
-                type: 'advice_provided',
-                data: response
-            });
+        if (!response.message || !response.type) {
+            console.error('Invalid response format:', response);
+            return;
         }
-
-        console.log('Messages after push:', this.messages.length);
-        
+        this.messages.push(response);
+        console.log('Added message to AI Mentor:', response.message.substring(0, 100) + '...');
         this.updateWebview();
     }
 
-    public updateWebview() {
-        console.log('=== AIMentorProvider.updateWebview called ===');
-        console.log('View exists:', !!this._view);
-        console.log('Messages to send:', this.messages.length, this.messages);
-        
-        if (this._view) {
-            this._view.webview.postMessage({
-                type: 'updateMessages',
-                messages: this.messages
-            });
-            console.log('Posted updateMessages to webview');
+    public addLocalAnalysis(data: any) {
+        const { fileName, language, diff, analysis } = data;
 
-            // Also send profile data if available
-            if (this.profileManager) {
-                try {
-                    const profiles = this.profileManager.getAllProfiles();
-                    const activeProfile = this.profileManager.getActiveProfile();
-                    
-                    console.log('=== BACKEND PROFILE UPDATE ===');
-                    console.log('Total profiles found:', profiles.length);
-                    console.log('Active profile:', activeProfile?.name || 'None');
-                    
-                    if (profiles.length > 0) {
-                        console.log('Profile details:');
-                        profiles.forEach((profile, index) => {
-                            console.log(`  ${index + 1}. ${profile.name} (${profile.id}) - GitHub: ${profile.githubUsername || 'N/A'}`);
-                        });
-                    }
-                    
-                    const profilesForWebview = profiles.map(p => ({
-                        id: p.id,
-                        name: p.name,
-                        githubUsername: p.githubUsername,
-                        avatar: p.avatar,
-                        personality: p.personality,
-                        codeStylePreferences: p.codeStylePreferences,
-                        prompts: p.prompts,
-                        githubInsights: (p as any).githubInsights,
-                        lastUpdated: p.lastUpdated
-                    }));
-                    
-                    console.log('Sending to webview:', profilesForWebview);
-                    
-                    this._view.webview.postMessage({
-                        type: 'updateProfiles',
-                        profiles: profilesForWebview,
-                        activeProfileId: activeProfile?.id,
-                        activeMentorName: activeProfile?.name || 'AI Mentor'
-                    });
-                    
-                    console.log('=== END BACKEND PROFILE UPDATE ===');
-                } catch (error) {
-                    console.error('Error updating webview with profiles:', error);
+        // Generate quick local insights without API calls
+        const addedLines = diff.filter((d: any) => d.added).length;
+        const removedLines = diff.filter((d: any) => d.removed).length;
+
+        let message = `📝 Code updated in ${fileName.split('/').pop()}`;
+        const insights = [];
+        const suggestions = [];
+
+        if (addedLines > 0) insights.push(`Added ${addedLines} lines`);
+        if (removedLines > 0) insights.push(`Removed ${removedLines} lines`);
+
+        // Basic pattern detection
+        const content = data.currentContent || '';
+        if (content.includes('console.log')) suggestions.push('Consider removing debug statements before production');
+        if (content.includes('TODO') || content.includes('FIXME')) suggestions.push('Address TODO/FIXME comments');
+
+        this.addMessage({
+            message,
+            type: 'insight',
+            insights,
+            suggestions
+        });
+    }
+
+    public updateWebview() {
+        if (this._view) {
+            const formattedMessages = this.messages.map(msg => {
+                // Ensure message is a string, not an object
+                let messageText = msg.message;
+                if (typeof messageText === 'object') {
+                    messageText = JSON.stringify(messageText, null, 2);
                 }
-            }
+
+                return {
+                    message: messageText || 'No message content',
+                    type: msg.type || 'explanation',
+                    suggestions: msg.suggestions || [],
+                    warnings: msg.warnings || [],
+                    codeSnippets: msg.codeSnippets || [],
+                    confidence: msg.confidence,
+                    learningOpportunity: msg.learningOpportunity,
+                    insights: msg.insights || [],
+                    predictions: msg.predictions || []
+                };
+            });
+            this._view.webview.postMessage({ type: 'updateMessages', messages: formattedMessages });
         }
     }
 
@@ -184,7 +169,7 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
 
     private createFallbackResponse(code: string, language: string): any {
         const activeProfile = this.profileManager?.getActiveProfile();
-        
+
         if (!activeProfile) {
             return {
                 message: 'AI Mentor: No mentor profile available. Please create a GitHub-based mentor profile first.',
@@ -193,15 +178,15 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                 type: 'warning'
             };
         }
-        
+
         const mentorName = activeProfile.name;
         const communicationStyle = activeProfile.personality.communicationStyle;
         const feedbackApproach = activeProfile.personality.feedbackApproach;
-        
+
         // Pattern-based analysis
         let suggestions = [];
         let warnings = [];
-        
+
         // Analyze code patterns
         const hasConsoleLog = code.includes('console.log');
         const hasVar = code.includes('var ');
@@ -210,7 +195,7 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
         const hasAsync = code.includes('async') || code.includes('await');
         const hasComments = code.includes('//') || code.includes('/*');
         const lineCount = code.split('\n').length;
-        
+
         // Generate suggestions based on GitHub profile personality
         if (hasConsoleLog) {
             suggestions.push(this.formatSuggestionByStyle('Consider using a proper logging library for production code', communicationStyle, feedbackApproach));
@@ -230,14 +215,14 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
         if (!hasComments && lineCount > 10) {
             suggestions.push(this.formatSuggestionByStyle('Consider adding comments for better code documentation', communicationStyle, feedbackApproach));
         }
-        
+
         // Ensure we always have at least one suggestion
         if (suggestions.length === 0 && warnings.length === 0) {
             suggestions.push(this.formatSuggestionByStyle('Your code looks clean! Keep up the good work.', communicationStyle, feedbackApproach));
         }
-        
+
         const message = `${mentorName}: I've analyzed your ${language} code based on my GitHub profile analysis. Here's what I found:`;
-        
+
         return {
             message,
             suggestions,
@@ -250,14 +235,14 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
         const activeProfile = this.profileManager?.getActiveProfile();
         const mentorName = activeProfile?.name || 'AI Mentor';
         const communicationStyle = activeProfile?.personality?.communicationStyle || 'supportive';
-        
+
         let message = `${mentorName}: I'm having trouble analyzing your code right now.`;
         let suggestions = [
             'Check your API key in VS Code settings',
             'Ensure you have internet connectivity',
             'Try again in a moment'
         ];
-        
+
         // Adjust message tone based on GitHub profile communication style
         if (communicationStyle === 'direct') {
             message = `${mentorName}: API error occurred. Check your configuration.`;
@@ -267,7 +252,7 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
         } else if (communicationStyle === 'supportive') {
             message = `${mentorName}: Don't worry, I'm having a small technical hiccup. Let's troubleshoot this together.`;
         }
-        
+
         return {
             message,
             suggestions,
@@ -314,6 +299,171 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
         }
     }
 
+    // Generate real AI suggestions for current code
+    public async addCodeAnalysis() {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            this.addMessage({
+                message: "No active editor found. Please open a file to analyze.",
+                type: "warning",
+                suggestions: ["Open a code file in the editor", "Select some code to analyze"]
+            });
+            return;
+        }
+
+        const document = editor.document;
+        const selection = editor.selection;
+        const code = selection.isEmpty ? document.getText() : document.getText(selection);
+
+        if (!code.trim()) {
+            this.addMessage({
+                message: "No code found to analyze. The file appears to be empty.",
+                type: "warning",
+                suggestions: ["Write some code first", "Select a code snippet to analyze"]
+            });
+            return;
+        }
+
+        // Show typing indicator
+        this.updateWebview();
+        if (this._view) {
+            this._view.webview.postMessage({ type: 'showTyping', mentor: 'AI Mentor' });
+        }
+
+        try {
+            // Use LLM service (now defaults to Gemini) for real analysis
+            const response = await this.llmService.sendMessage({
+                type: 'code_analysis',
+                fileName: document.fileName,
+                language: document.languageId,
+                code: code,
+                currentContent: code,
+                analysis: {
+                    complexity: this.calculateComplexity(code),
+                    patterns: this.detectPatterns(code, document.languageId),
+                    potentialIssues: this.detectPotentialIssues(code)
+                }
+            });
+
+            if (response) {
+                this.addMessage(response);
+            } else {
+                // Fallback response with more detailed analysis
+                this.addMessage({
+                    message: `🔍 Analyzed ${document.languageId} code in ${document.fileName}. Here's what I found:`,
+                    type: "explanation",
+                    suggestions: this.generateCodeSuggestions(code, document.languageId),
+                    insights: this.generateCodeInsights(code, document.languageId),
+                    warnings: this.detectWarnings(code, document.languageId),
+                    codeSnippets: this.generateImprovementSnippets(code, document.languageId)
+                });
+            }
+        } catch (error) {
+            console.error('Code analysis error:', error);
+            this.addMessage({
+                message: "❌ Error analyzing code. Please check your Gemini API configuration.",
+                type: "warning",
+                suggestions: ["Set your Gemini API key: aiMentor.apiKey", "Ensure llmProvider is set to 'gemini'", "Try again in a moment"]
+            });
+        } finally {
+            // Hide typing indicator
+            if (this._view) {
+                this._view.webview.postMessage({ type: 'hideTyping' });
+            }
+        }
+    }
+    
+    private calculateComplexity(code: string): string {
+        const lines = code.split('\n').length;
+        const functions = (code.match(/function|def |class |const \w+\s*=/g) || []).length;
+        const conditions = (code.match(/if|else|switch|case|while|for/g) || []).length;
+        
+        const complexity = lines + functions * 2 + conditions * 3;
+        if (complexity < 20) return 'low';
+        if (complexity < 50) return 'medium';
+        return 'high';
+    }
+    
+    private detectPatterns(code: string, language: string): string[] {
+        const patterns = [];
+        
+        if (code.includes('function') || code.includes('def ')) patterns.push('function_definition');
+        if (code.includes('class ')) patterns.push('class_definition');
+        if (code.includes('const ') || code.includes('let ') || code.includes('var ')) patterns.push('variable_declaration');
+        if (code.includes('if') || code.includes('else')) patterns.push('conditional_logic');
+        if (code.includes('for') || code.includes('while')) patterns.push('loops');
+        if (code.includes('try') || code.includes('catch')) patterns.push('error_handling');
+        if (code.includes('async') || code.includes('await')) patterns.push('async_programming');
+        
+        return patterns;
+    }
+    
+    private detectPotentialIssues(code: string): string[] {
+        const issues = [];
+        
+        if (code.includes('console.log')) issues.push('debug_statements');
+        if (code.includes('TODO') || code.includes('FIXME')) issues.push('todo_comments');
+        if (!code.includes('try') && code.includes('await')) issues.push('unhandled_async_errors');
+        if (code.split('\n').some(line => line.length > 120)) issues.push('long_lines');
+        
+        return issues;
+    }
+    
+    private generateCodeSuggestions(code: string, language: string): string[] {
+        const suggestions = [];
+        
+        if (code.includes('console.log')) suggestions.push('Consider using a proper logging library instead of console.log');
+        if (!code.includes('//') && !code.includes('/*')) suggestions.push('Add comments to explain complex logic');
+        if (code.includes('var ')) suggestions.push('Use const/let instead of var for better scoping');
+        if (language === 'javascript' && !code.includes('use strict')) suggestions.push('Consider adding "use strict" directive');
+        
+        return suggestions;
+    }
+    
+    private generateCodeInsights(code: string, language: string): string[] {
+        const insights = [];
+        const lines = code.split('\n').length;
+        
+        insights.push(`Code contains ${lines} lines`);
+        if (code.includes('async')) insights.push('Uses modern async/await patterns');
+        if (code.includes('class')) insights.push('Object-oriented programming approach');
+        if (code.includes('const')) insights.push('Good use of immutable variables');
+        
+        return insights;
+    }
+    
+    private detectWarnings(code: string, language: string): string[] {
+        const warnings = [];
+        
+        if (code.includes('eval(')) warnings.push('⚠️ eval() usage detected - potential security risk');
+        if (code.includes('innerHTML') && !code.includes('sanitize')) warnings.push('⚠️ innerHTML usage without sanitization');
+        if (language === 'javascript' && code.includes('==') && !code.includes('===')) warnings.push('⚠️ Use === instead of == for strict equality');
+        
+        return warnings;
+    }
+    
+    private generateImprovementSnippets(code: string, language: string): any[] {
+        const snippets = [];
+        
+        if (code.includes('console.log')) {
+            snippets.push({
+                language: language,
+                code: 'const logger = require("winston");\nlogger.info("Your message here");',
+                explanation: 'Use a proper logging library for production code'
+            });
+        }
+        
+        if (language === 'javascript' && code.includes('var ')) {
+            snippets.push({
+                language: 'javascript',
+                code: 'const myVariable = "value"; // or let for mutable',
+                explanation: 'Use const/let for better scoping and immutability'
+            });
+        }
+        
+        return snippets;
+    }
+
     private _getHtmlForWebview(webview: vscode.Webview) {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.css'));
@@ -355,6 +505,7 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                             <select id="mentorSelect" class="mentor-dropdown">
                                 ${mentorOptions}
                             </select>
+                            <button id="analyzeBtn" class="btn btn-primary">Analyze Code</button>
                             <button id="clearBtn" class="btn btn-secondary">Clear</button>
                         </div>
                     </div>
