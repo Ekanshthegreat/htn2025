@@ -165,6 +165,14 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
         diff: any[];
         astAnalysis: any;
         patternAnalysis: any;
+        aiAnalysis?: {
+            insights: string[];
+            predictions: string[];
+            suggestions: string[];
+            warnings: string[];
+            codeSnippets?: Array<{language: string; code: string; explanation?: string}>;
+        };
+        mentorResponse?: any;
         previousContent: string;
         currentContent: string;
         timestamp: string;
@@ -182,7 +190,7 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
             confidence: 0.7,
             priority: 'medium',
             content: {
-                message: this.generatePersonalizedMessage(activeProfile, 'code_analysis', analysis.fileName)
+                message: analysis.mentorResponse?.message || this.generatePersonalizedMessage(activeProfile, 'code_analysis', analysis.fileName)
             },
             actionable: true
         };
@@ -212,11 +220,25 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
             };
         }
 
-        // Calculate priority based on analysis results
-        consolidatedMessage.priority = this.calculateConsolidatedPriority(consolidatedMessage);
-        
-        // Calculate confidence based on analysis types
-        consolidatedMessage.confidence = consolidatedMessage.analysisTypes.length > 1 ? 0.9 : 0.7;
+        // Add AI analysis if available
+        if (analysis.aiAnalysis) {
+            consolidatedMessage.analysisTypes.push('ai');
+            consolidatedMessage.aiAnalysis = {
+                insights: analysis.aiAnalysis.insights || [],
+                predictions: analysis.aiAnalysis.predictions || [],
+                suggestions: analysis.aiAnalysis.suggestions || [],
+                warnings: analysis.aiAnalysis.warnings || [],
+                codeSnippets: analysis.aiAnalysis.codeSnippets || []
+            };
+            // Use AI response confidence if available
+            consolidatedMessage.confidence = analysis.mentorResponse?.confidence || 0.85;
+            consolidatedMessage.priority = this.calculateAIPriority(analysis.aiAnalysis);
+        } else {
+            // Calculate priority based on analysis results
+            consolidatedMessage.priority = this.calculateConsolidatedPriority(consolidatedMessage);
+            // Calculate confidence based on analysis types
+            consolidatedMessage.confidence = consolidatedMessage.analysisTypes.length > 1 ? 0.9 : 0.7;
+        }
 
         this.messages.push(consolidatedMessage);
         this.updateWebview();
@@ -451,6 +473,8 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
     // Generate real AI suggestions for current code
     public async addCodeAnalysis() {
         const editor = vscode.window.activeTextEditor;
+        console.log('🔍 addCodeAnalysis: editor found:', !!editor);
+        
         if (!editor) {
             this.addMessage({
                 message: "No active editor found. Please open a file to analyze.",
@@ -463,6 +487,12 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
         const document = editor.document;
         const selection = editor.selection;
         const code = selection.isEmpty ? document.getText() : document.getText(selection);
+        
+        console.log('🔍 addCodeAnalysis: document.fileName:', document.fileName);
+        console.log('🔍 addCodeAnalysis: document.languageId:', document.languageId);
+        console.log('🔍 addCodeAnalysis: selection.isEmpty:', selection.isEmpty);
+        console.log('🔍 addCodeAnalysis: code length:', code.length);
+        console.log('🔍 addCodeAnalysis: code preview:', code.substring(0, 100));
 
         if (!code.trim()) {
             this.addMessage({
@@ -740,6 +770,16 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
         if (hasErrors || complexity > 15) return 'critical';
         if (hasWarnings || complexity > 10) return 'high';
         if (complexity > 5) return 'medium';
+        return 'low';
+    }
+
+    private calculateAIPriority(aiAnalysis: any): 'critical' | 'high' | 'medium' | 'low' {
+        const warningCount = aiAnalysis.warnings?.length || 0;
+        const suggestionCount = aiAnalysis.suggestions?.length || 0;
+        
+        if (warningCount > 2) return 'critical';
+        if (warningCount > 1 || suggestionCount > 3) return 'high';
+        if (warningCount > 0 || suggestionCount > 1) return 'medium';
         return 'low';
     }
 

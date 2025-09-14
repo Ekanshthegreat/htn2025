@@ -29,17 +29,23 @@ export function activate(context: vscode.ExtensionContext) {
     console.log('🚀 AI Debugger Mentor is now active!');
 
     // Initialize services
-    profileManager = new ProfileManager(context);
-    githubService = new GitHubService();
-    genesysService = new GenesysService();
-    llmService = new LLMService(profileManager);
+    llmService = new LLMService();
     astAnalyzer = new ASTAnalyzer();
     voiceService = new VoiceService();
     graphiteService = new GraphiteService();
-    realtimeAnalyzer = new RealtimeAnalyzer(llmService, voiceService, profileManager);
-    codeWatcher = new CodeWatcher(astAnalyzer, llmService, profileManager);
-    aiMentorProvider = new AIMentorProvider(context.extensionUri, codeWatcher, llmService, profileManager);
+    profileManager = new ProfileManager(context);
+    githubService = new GitHubService();
+    genesysService = new GenesysService();
     hoverProvider = new MentorHoverProvider(profileManager, astAnalyzer);
+    
+    // Initialize RealtimeAnalyzer for blue squiggles with mentor persona
+    realtimeAnalyzer = new RealtimeAnalyzer(profileManager);
+    
+    // Initialize CodeWatcher for chat panel messages only
+    codeWatcher = new CodeWatcher(astAnalyzer, llmService, profileManager);
+    
+    // Initialize AI Mentor Provider with proper CodeWatcher connection
+    aiMentorProvider = new AIMentorProvider(context.extensionUri, codeWatcher, llmService, profileManager);
     
     // Connect codeWatcher to aiMentorProvider for UI updates
     codeWatcher.setAIMentorProvider(aiMentorProvider);
@@ -387,6 +393,10 @@ export function activate(context: vscode.ExtensionContext) {
         });
     }
 
+    // Auto-activate CodeWatcher on extension startup
+    console.log('🔧 Auto-activating CodeWatcher for comprehensive AI flow logging...');
+    codeWatcher.activate();
+    
     // Auto-activate on supported languages
     const activeEditor = vscode.window.activeTextEditor;
     if (activeEditor && isSupportedLanguage(activeEditor.document.languageId)) {
