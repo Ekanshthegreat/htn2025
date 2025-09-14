@@ -1,7 +1,17 @@
 import * as vscode from 'vscode';
 import { GitHubService } from './githubService';
 
-export interface CodeStylePreferences {
+
+export interface ArchitecturalPreferences {
+    preferredPatterns: string[];           // ['mvc', 'microservices', 'clean-architecture']
+    codeOrganization: 'modular' | 'monolithic' | 'layered' | 'component-based';
+    dependencyManagement: 'minimal' | 'selective' | 'comprehensive';
+    errorHandling: 'explicit' | 'graceful' | 'defensive' | 'fail-fast';
+    testingApproach: 'tdd' | 'bdd' | 'integration-first' | 'unit-focused';
+    performancePriority: 'memory' | 'speed' | 'scalability' | 'maintainability';
+}
+
+export interface CodingStylePreferences {
     indentStyle: 'tabs' | 'spaces';
     indentSize: number;
     maxLineLength: number;
@@ -9,6 +19,19 @@ export interface CodeStylePreferences {
     semicolons: boolean;
     trailingCommas: boolean;
     bracketSpacing: boolean;
+    functionStyle: 'arrow' | 'function' | 'mixed';
+    variableNaming: 'camelCase' | 'snake_case' | 'kebab-case';
+    commentStyle: 'minimal' | 'descriptive' | 'verbose';
+    importOrganization: 'grouped' | 'alphabetical' | 'by-usage';
+}
+
+export interface ExperienceBasedTraits {
+    yearsOfExperience: number;
+    primaryLanguages: string[];
+    architecturalPhilosophy: string;
+    codeReviewStyle: 'thorough' | 'focused' | 'collaborative' | 'mentoring';
+    problemSolvingApproach: 'systematic' | 'intuitive' | 'experimental' | 'research-first';
+    learningStyle: 'hands-on' | 'theoretical' | 'community-driven' | 'documentation-first';
 }
 
 export interface MentorPersonality {
@@ -17,6 +40,8 @@ export interface MentorPersonality {
     expertise: string[];
     focusAreas: string[];
     responseLength: 'brief' | 'moderate' | 'detailed';
+    architecturalPrefs: ArchitecturalPreferences;
+    experienceTraits: ExperienceBasedTraits;
 }
 
 export interface MentorProfile {
@@ -25,7 +50,7 @@ export interface MentorProfile {
     githubUsername?: string;
     avatar?: string;
     personality: MentorPersonality;
-    codeStylePreferences: CodeStylePreferences;
+    codeStylePreferences: CodingStylePreferences;
     prompts: {
         systemPrompt: string;
         reviewPrompt: string;

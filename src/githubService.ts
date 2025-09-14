@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { MentorProfile, MentorPersonality, CodeStylePreferences } from './profileManager';
+import { MentorProfile, MentorPersonality, CodingStylePreferences, ArchitecturalPreferences, ExperienceBasedTraits } from './profileManager';
 import { GeminiService } from './geminiService';
 
 export interface GitHubUser {
@@ -38,7 +38,7 @@ export interface GitHubCommit {
 
 export interface ProfileAnalysis {
     personality: MentorPersonality;
-    codeStylePreferences: CodeStylePreferences;
+    codeStylePreferences: CodingStylePreferences;
     expertise: string[];
     communicationPatterns: {
         avgCommitMessageLength: number;
@@ -121,7 +121,7 @@ export class GitHubService {
             console.log(`Inferred personality:`, personality);
             
             // Infer code style preferences
-            const codeStylePreferences = this.inferCodeStyle(languageStats, commitAnalysis);
+            const codeStylePreferences = this.inferCodeStylePreferences(repos || [], user, commitAnalysis);
             console.log(`Code style preferences:`, codeStylePreferences);
 
             return {
@@ -289,17 +289,178 @@ export class GitHubService {
             focusAreas.push('performance');
         }
 
+        // Infer architectural preferences based on repository analysis
+        const architecturalPrefs = this.inferArchitecturalPreferences(repos, user, commitAnalysis);
+        
+        // Infer experience traits based on GitHub activity
+        const experienceTraits = this.inferExperienceTraits(user, repos, commitAnalysis);
+
         return {
             communicationStyle,
             feedbackApproach,
             expertise: [], // Will be filled by extractExpertise
             focusAreas,
-            responseLength
+            responseLength,
+            architecturalPrefs,
+            experienceTraits
         };
     }
 
-    private inferCodeStyle(languageStats: Map<string, number>, commitAnalysis: any): CodeStylePreferences {
-        const topLanguage = Array.from(languageStats.entries())
+    private inferArchitecturalPreferences(repos: GitHubRepo[], user: GitHubUser, commitAnalysis: any): ArchitecturalPreferences {
+        const preferredPatterns: string[] = [];
+        let codeOrganization: ArchitecturalPreferences['codeOrganization'] = 'modular';
+        let dependencyManagement: ArchitecturalPreferences['dependencyManagement'] = 'selective';
+        let errorHandling: ArchitecturalPreferences['errorHandling'] = 'explicit';
+        let testingApproach: ArchitecturalPreferences['testingApproach'] = 'unit-focused';
+        let performancePriority: ArchitecturalPreferences['performancePriority'] = 'maintainability';
+
+        // Analyze repository structure patterns
+        const hasLargeMonorepos = repos.some(r => r.size > 10000);
+        const hasManySmallRepos = repos.filter(r => r.size < 1000).length > repos.length * 0.7;
+        const hasTestingRepos = repos.some(r => r.topics?.includes('testing') || r.name.includes('test'));
+        const hasPerformanceRepos = repos.some(r => r.topics?.includes('performance') || r.description?.includes('optimization'));
+        const hasArchitectureRepos = repos.some(r => r.topics?.includes('architecture') || r.topics?.includes('microservices'));
+
+        // Infer architectural patterns based on repo analysis
+        if (hasArchitectureRepos || repos.some(r => r.topics?.includes('microservices'))) {
+            preferredPatterns.push('microservices');
+            codeOrganization = 'component-based';
+        }
+        if (repos.some(r => r.topics?.includes('mvc') || r.description?.includes('mvc'))) {
+            preferredPatterns.push('mvc');
+            codeOrganization = 'layered';
+        }
+        if (repos.some(r => r.topics?.includes('clean-architecture') || r.description?.includes('clean'))) {
+            preferredPatterns.push('clean-architecture');
+        }
+        if (repos.some(r => r.topics?.includes('event-driven') || r.description?.includes('event'))) {
+            preferredPatterns.push('event-driven');
+        }
+
+        // Infer code organization style
+        if (hasManySmallRepos) {
+            codeOrganization = 'modular';
+            dependencyManagement = 'minimal';
+        } else if (hasLargeMonorepos) {
+            codeOrganization = 'monolithic';
+            dependencyManagement = 'comprehensive';
+        }
+
+        // Infer testing approach
+        if (hasTestingRepos) {
+            if (repos.some(r => r.topics?.includes('tdd') || r.description?.includes('tdd'))) {
+                testingApproach = 'tdd';
+            } else if (repos.some(r => r.topics?.includes('bdd') || r.description?.includes('bdd'))) {
+                testingApproach = 'bdd';
+            } else if (repos.some(r => r.topics?.includes('integration') || r.description?.includes('integration'))) {
+                testingApproach = 'integration-first';
+            }
+        }
+
+        // Infer error handling style based on commit patterns
+        if (commitAnalysis.usesConventionalCommits) {
+            errorHandling = 'defensive';
+        } else if (user.public_repos > 100) {
+            errorHandling = 'fail-fast';
+        }
+
+        // Infer performance priority
+        if (hasPerformanceRepos) {
+            performancePriority = 'speed';
+        } else if (repos.some(r => r.topics?.includes('scalability'))) {
+            performancePriority = 'scalability';
+        } else if (repos.some(r => r.topics?.includes('memory') || r.description?.includes('memory'))) {
+            performancePriority = 'memory';
+        }
+
+        return {
+            preferredPatterns,
+            codeOrganization,
+            dependencyManagement,
+            errorHandling,
+            testingApproach,
+            performancePriority
+        };
+    }
+
+    private inferExperienceTraits(user: GitHubUser, repos: GitHubRepo[], commitAnalysis: any): ExperienceBasedTraits {
+        // Calculate years of experience based on account age
+        const accountAge = new Date().getFullYear() - new Date(user.created_at).getFullYear();
+        const yearsOfExperience = Math.max(1, accountAge);
+
+        // Extract primary languages from repos
+        const languageCount = new Map<string, number>();
+        repos.forEach(repo => {
+            if (repo.language) {
+                languageCount.set(repo.language, (languageCount.get(repo.language) || 0) + 1);
+            }
+        });
+        const primaryLanguages = Array.from(languageCount.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([lang]) => lang);
+
+        // Infer architectural philosophy based on repo patterns
+        let architecturalPhilosophy = 'Keep it simple and maintainable';
+        if (repos.some(r => r.topics?.includes('microservices'))) {
+            architecturalPhilosophy = 'Distributed systems with clear service boundaries';
+        } else if (repos.some(r => r.topics?.includes('functional'))) {
+            architecturalPhilosophy = 'Functional programming with immutable data structures';
+        } else if (repos.some(r => r.topics?.includes('performance'))) {
+            architecturalPhilosophy = 'Performance-first with optimized algorithms';
+        } else if (repos.some(r => r.topics?.includes('clean-code'))) {
+            architecturalPhilosophy = 'Clean code principles with SOLID design';
+        }
+
+        // Infer code review style based on activity and followers
+        let codeReviewStyle: ExperienceBasedTraits['codeReviewStyle'] = 'collaborative';
+        if (user.followers > 1000) {
+            codeReviewStyle = 'mentoring';
+        } else if (commitAnalysis.usesConventionalCommits) {
+            codeReviewStyle = 'thorough';
+        } else if (user.public_repos > 50) {
+            codeReviewStyle = 'focused';
+        }
+
+        // Infer problem-solving approach
+        let problemSolvingApproach: ExperienceBasedTraits['problemSolvingApproach'] = 'systematic';
+        if (repos.some(r => r.topics?.includes('research') || r.description?.includes('research'))) {
+            problemSolvingApproach = 'research-first';
+        } else if (repos.some(r => r.topics?.includes('prototype') || r.description?.includes('experiment'))) {
+            problemSolvingApproach = 'experimental';
+        } else if (commitAnalysis.commitFrequency === 'high') {
+            problemSolvingApproach = 'intuitive';
+        }
+
+        // Infer learning style
+        let learningStyle: ExperienceBasedTraits['learningStyle'] = 'hands-on';
+        if (repos.some(r => r.topics?.includes('documentation') || r.description?.includes('docs'))) {
+            learningStyle = 'documentation-first';
+        } else if (repos.some(r => r.topics?.includes('tutorial') || r.description?.includes('learn'))) {
+            learningStyle = 'theoretical';
+        } else if (user.following > user.followers) {
+            learningStyle = 'community-driven';
+        }
+
+        return {
+            yearsOfExperience,
+            primaryLanguages,
+            architecturalPhilosophy,
+            codeReviewStyle,
+            problemSolvingApproach,
+            learningStyle
+        };
+    }
+
+    private inferCodeStylePreferences(repos: GitHubRepo[], user: GitHubUser, commitAnalysis: any): CodingStylePreferences {
+        // Analyze language usage to determine top language
+        const languageCount = new Map<string, number>();
+        repos.forEach(repo => {
+            if (repo.language) {
+                languageCount.set(repo.language, (languageCount.get(repo.language) || 0) + repo.size);
+            }
+        });
+        const topLanguage = Array.from(languageCount.entries())
             .sort((a, b) => b[1] - a[1])[0]?.[0]?.toLowerCase();
 
         // Set defaults based on most used language
@@ -310,6 +471,10 @@ export class GitHubService {
         let semicolons = true;
         let trailingCommas = true;
         let bracketSpacing = true;
+        let functionStyle: 'arrow' | 'function' | 'mixed' = 'arrow';
+        let variableNaming: 'camelCase' | 'snake_case' | 'kebab-case' = 'camelCase';
+        let commentStyle: 'minimal' | 'descriptive' | 'verbose' = 'descriptive';
+        let importOrganization: 'grouped' | 'alphabetical' | 'by-usage' = 'grouped';
 
         // Adjust based on language preferences
         switch (topLanguage) {
@@ -318,30 +483,59 @@ export class GitHubService {
                 indentSize = 2;
                 maxLineLength = 100;
                 preferredQuotes = 'single';
+                functionStyle = 'arrow';
+                variableNaming = 'camelCase';
                 break;
             case 'python':
                 indentSize = 4;
                 maxLineLength = 88;
                 preferredQuotes = 'double';
                 semicolons = false;
+                functionStyle = 'function';
+                variableNaming = 'snake_case';
                 break;
             case 'java':
             case 'c#':
                 indentSize = 4;
                 maxLineLength = 120;
                 preferredQuotes = 'double';
+                functionStyle = 'function';
+                variableNaming = 'camelCase';
                 break;
             case 'go':
                 indentStyle = 'tabs';
                 maxLineLength = 100;
                 preferredQuotes = 'double';
+                functionStyle = 'function';
+                variableNaming = 'camelCase';
+                break;
+            case 'rust':
+                indentSize = 4;
+                maxLineLength = 100;
+                preferredQuotes = 'double';
+                functionStyle = 'function';
+                variableNaming = 'snake_case';
                 break;
         }
 
-        // Adjust based on commit patterns (more structured commits = more structured code style)
+        // Adjust based on commit patterns and experience
         if (commitAnalysis.usesConventionalCommits) {
             trailingCommas = true;
             bracketSpacing = true;
+            commentStyle = 'descriptive';
+            importOrganization = 'grouped';
+        }
+
+        // Adjust based on repository patterns
+        if (repos.some(r => r.topics?.includes('documentation'))) {
+            commentStyle = 'verbose';
+        } else if (repos.some(r => r.topics?.includes('minimal') || r.description?.includes('minimal'))) {
+            commentStyle = 'minimal';
+        }
+
+        // Adjust function style based on modern practices
+        if (user.created_at && new Date(user.created_at).getFullYear() > 2015 && topLanguage === 'javascript') {
+            functionStyle = 'arrow';
         }
 
         return {
@@ -351,7 +545,11 @@ export class GitHubService {
             preferredQuotes,
             semicolons,
             trailingCommas,
-            bracketSpacing
+            bracketSpacing,
+            functionStyle,
+            variableNaming,
+            commentStyle,
+            importOrganization
         };
     }
 
