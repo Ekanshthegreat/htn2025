@@ -1,4 +1,5 @@
 import * as nodemailer from 'nodemailer';
+import * as vscode from 'vscode';
 
 class NotificationService {
     private transporter: nodemailer.Transporter | undefined;
@@ -9,22 +10,53 @@ class NotificationService {
         this.setupTransporter();
     }
 
-    private async setupTransporter() {
+    public async setupTransporter() {
         try {
-            // Generate test SMTP service account from ethereal.email
-            const testAccount = await nodemailer.createTestAccount();
+            const cfg = vscode.workspace.getConfiguration('aiMentor');
+            const host = cfg.get<string>('smtpHost');
+            const port = cfg.get<number>('smtpPort', 587);
+            const secure = cfg.get<boolean>('smtpSecure', false);
+            const user = cfg.get<string>('smtpUser');
+            const pass = cfg.get<string>('smtpPass');
 
-            // Create reusable transporter object
-            this.transporter = nodemailer.createTransport({
-                host: 'smtp.ethereal.email',
-                port: 587,
-                secure: false, // true for 465, false for other ports
-                auth: {
-                    user: testAccount.user, // generated ethereal user
-                    pass: testAccount.pass, // generated ethereal password
-                },
-            });
-            console.log('Nodemailer transporter configured with Ethereal.');
+            console.log('=== SMTP Configuration Check ===');
+            console.log('Host:', host || '(not set)');
+            console.log('Port:', port);
+            console.log('Secure:', secure);
+            console.log('User:', user || '(not set)');
+            console.log('Pass:', pass ? '***configured***' : '(not set)');
+
+            if (host && user && pass) {
+                console.log('✅ Using REAL SMTP - emails will be sent to actual recipients');
+                this.transporter = nodemailer.createTransport({
+                    host,
+                    port,
+                    secure,
+                    auth: { user, pass }
+                });
+                console.log(`📧 SMTP configured: ${host}:${port} secure=${secure}`);
+            } else {
+                console.log('⚠️  Using ETHEREAL TEST - emails will NOT reach real recipients');
+                console.log('Missing SMTP settings. Configure these in VS Code settings:');
+                console.log('- aiMentor.smtpHost (e.g., smtp.gmail.com)');
+                console.log('- aiMentor.smtpUser (your email)');
+                console.log('- aiMentor.smtpPass (your app password)');
+                // Generate test SMTP service account from ethereal.email
+                const testAccount = await nodemailer.createTestAccount();
+
+                // Create reusable transporter object
+                this.transporter = nodemailer.createTransport({
+                    host: 'smtp.ethereal.email',
+                    port: 587,
+                    secure: false, // true for 465, false for other ports
+                    auth: {
+                        user: testAccount.user, // generated ethereal user
+                        pass: testAccount.pass, // generated ethereal password
+                    },
+                });
+                console.log('📧 Ethereal configured for testing only');
+            }
+            console.log('=== End SMTP Configuration ===');
         } catch (error) {
             console.error('Failed to create Nodemailer test account:', error);
         }
@@ -40,8 +72,9 @@ class NotificationService {
             }
         }
 
+        const from = vscode.workspace.getConfiguration('aiMentor').get<string>('smtpFrom', '"AI Mentor Platform" <noreply@ai-mentor.com>')!;
         const mailOptions = {
-            from: '"AI Mentor Platform" <noreply@ai-mentor.com>',
+            from,
             to: email,
             subject: `Summary of Your AI Likeness Usage`,
             text: `Hello ${mentorName},\n\nA developer has been interacting with your AI likeness. Here is a summary of their session:\n\n${summary}\n\nRegards,\nThe AI Mentor Team`,
@@ -49,15 +82,25 @@ class NotificationService {
         };
 
         try {
+            console.log('=== Sending Email ===');
+            console.log('To:', email);
+            console.log('From:', from);
+            console.log('Subject:', mailOptions.subject);
             const info = await this.transporter.sendMail(mailOptions);
             const previewUrl = nodemailer.getTestMessageUrl(info);
-            console.log('Message sent: %s', info.messageId);
+            console.log('✅ Email sent successfully!');
+            console.log('Message ID:', info.messageId);
+            console.log('Response:', info.response);
             if (previewUrl) {
-                console.log('Preview URL: %s', previewUrl);
+                console.log('📧 Ethereal Preview URL:', previewUrl);
+            } else {
+                console.log('📧 Real email sent - no preview URL (this is normal for real SMTP)');
             }
+            console.log('=== End Email Send ===');
             return previewUrl || null;
         } catch (error) {
-            console.error('Error sending email:', error);
+            console.error('❌ Email send failed:', error);
+            console.error('Error details:', error.message);
             return null;
         }
     }
@@ -72,8 +115,9 @@ class NotificationService {
             }
         }
 
+        const from = vscode.workspace.getConfiguration('aiMentor').get<string>('smtpFrom', '"AI Mentor Platform" <noreply@ai-mentor.com>')!;
         const mailOptions = {
-            from: '"AI Mentor Platform" <noreply@ai-mentor.com>',
+            from,
             to: email,
             subject: `Session Summary for Your AI Likeness`,
             text: `Hello ${mentorName},\n\nPlease view this email in an HTML-capable client.`,
@@ -90,15 +134,25 @@ class NotificationService {
         } as nodemailer.SendMailOptions;
 
         try {
+            console.log('=== Sending Rich Email ===');
+            console.log('To:', email);
+            console.log('From:', from);
+            console.log('Subject:', mailOptions.subject);
             const info = await this.transporter.sendMail(mailOptions);
             const previewUrl = nodemailer.getTestMessageUrl(info);
-            console.log('Message sent: %s', info.messageId);
+            console.log('✅ Rich email sent successfully!');
+            console.log('Message ID:', info.messageId);
+            console.log('Response:', info.response);
             if (previewUrl) {
-                console.log('Preview URL: %s', previewUrl);
+                console.log('📧 Ethereal Preview URL:', previewUrl);
+            } else {
+                console.log('📧 Real email sent - no preview URL (this is normal for real SMTP)');
             }
-            return previewUrl || null;
+            console.log('=== End Rich Email Send ===');
+            return previewUrl || 'success';
         } catch (error) {
-            console.error('Error sending rich email:', error);
+            console.error('❌ Rich email send failed:', error);
+            console.error('Error details:', error.message);
             return null;
         }
     }

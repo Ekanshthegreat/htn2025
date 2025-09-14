@@ -106,7 +106,7 @@ function complexDataProcessor(data, options, filters, transformations, validatio
         processedData = processedData.filter(item => {
             return validations.every(validation => {
                 if (validation.type === 'required') {
-                    return item[validation.field] !== null && item[validation.field] !== undefined;
+                     return item[validation.field] !== null && item[validation.field] !== undefined;
                 } else if (validation.type === 'minLength') {
                     return item[validation.field].length >= validation.minLength;
                 } else if (validation.type === 'maxLength') {
