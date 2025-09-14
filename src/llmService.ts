@@ -46,7 +46,7 @@ export class LLMService {
     private requestWindowStart: number = 0;
     private readonly MAX_REQUESTS_PER_MINUTE = 10;
     private readonly MIN_REQUEST_INTERVAL = 6000; // 6 seconds between requests
-    private readonly CONTEXT_WINDOW_LIMIT = 8000; // Conservative token limit
+    private readonly CONTEXT_WINDOW_LIMIT = 32000; // Increased for GPT-4 Turbo (128k) and GPT-4 (8k-32k)
 
     constructor(profileManager?: any) {
         this.profileManager = profileManager;
@@ -300,13 +300,16 @@ export class LLMService {
 
 CRITICAL: You MUST respond in character as ${mentorName}. Never break character.
 
-Response format should be JSON with:
+IMPORTANT: Return ONLY valid JSON. Do NOT wrap JSON in markdown code blocks or add any extra text.
+
+Response format (return exactly this structure):
 {
-  "message": "${mentorName}: [Your response in character]",
-  "suggestions": ["Optional array of suggestions"],
-  "warnings": ["Optional array of warnings"],
-  "codeSnippets": [{"language": "js", "code": "example"}],
-  "type": "narration|warning|suggestion|explanation"
+  "message": "${mentorName}: [Your main response message in character - this should be readable text, NOT JSON]",
+  "suggestions": ["Array of actionable suggestions as strings"],
+  "warnings": ["Array of warning messages as strings"],
+  "codeSnippets": [{"language": "js", "code": "example code", "explanation": "what this code does"}],
+  "type": "narration|warning|suggestion|explanation",
+  "confidence": 0.85
 }`;
                 } else {
                     console.log('No prompts found for active profile:', activeProfile?.name);
@@ -335,13 +338,16 @@ Key behaviors:
 - Point out best practices and suggest improvements
 - When tracing execution, narrate the flow like you're walking through it together
 
-Response format should be JSON with:
+IMPORTANT: Return ONLY valid JSON. Do NOT wrap JSON in markdown code blocks or add any extra text.
+
+Response format (return exactly this structure):
 {
-  "message": "Main explanation or narration",
-  "suggestions": ["Optional array of suggestions"],
-  "warnings": ["Optional array of warnings"],
-  "codeSnippets": [{"language": "js", "code": "example"}],
-  "type": "narration|warning|suggestion|explanation"
+  "message": "AI Mentor: [Your main response message - this should be readable text, NOT JSON]",
+  "suggestions": ["Array of actionable suggestions as strings"],
+  "warnings": ["Array of warning messages as strings"],
+  "codeSnippets": [{"language": "js", "code": "example code", "explanation": "what this code does"}],
+  "type": "narration|warning|suggestion|explanation",
+  "confidence": 0.85
 }`;
     }
 
@@ -426,12 +432,40 @@ Provide a comprehensive code analysis including potential issues, suggestions fo
         try {
             // Try to parse as JSON first
             const parsed = JSON.parse(content);
+            
+            // Check if the message field itself is JSON (double-encoded)
+            let message = parsed.message || content;
+            if (typeof message === 'string' && message.trim().startsWith('{')) {
+                try {
+                    const innerParsed = JSON.parse(message);
+                    if (innerParsed.message) {
+                        message = innerParsed.message;
+                        // Merge any additional fields from inner JSON
+                        return {
+                            message: message,
+                            suggestions: innerParsed.suggestions || parsed.suggestions || [],
+                            warnings: innerParsed.warnings || parsed.warnings || [],
+                            codeSnippets: innerParsed.codeSnippets || parsed.codeSnippets || [],
+                            type: innerParsed.type || parsed.type || this.inferResponseType(messageType),
+                            insights: innerParsed.insights || parsed.insights || [],
+                            predictions: innerParsed.predictions || parsed.predictions || [],
+                            confidence: innerParsed.confidence || parsed.confidence
+                        };
+                    }
+                } catch {
+                    // If inner parsing fails, use the original message
+                }
+            }
+            
             return {
-                message: parsed.message || content,
+                message: message,
                 suggestions: parsed.suggestions || [],
                 warnings: parsed.warnings || [],
                 codeSnippets: parsed.codeSnippets || [],
-                type: parsed.type || this.inferResponseType(messageType)
+                type: parsed.type || this.inferResponseType(messageType),
+                insights: parsed.insights || [],
+                predictions: parsed.predictions || [],
+                confidence: parsed.confidence
             };
         } catch {
             // Fallback to plain text

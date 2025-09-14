@@ -463,6 +463,10 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
             const success = await this.profileManager.setActiveProfile(profileId);
             if (success) {
                 const profile = this.profileManager.getProfile(profileId);
+                
+                // Clear chat history when switching mentors
+                this.clearHistory();
+                
                 this.sendProfileUpdate(); // Send updated profile info to webview
                 this.updateWebview();
                 vscode.window.showInformationMessage(`Switched to mentor profile: ${profile?.name}`);
