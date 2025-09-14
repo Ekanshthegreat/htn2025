@@ -1,23 +1,34 @@
 import * as vscode from 'vscode';
 import { ASTAnalyzer } from './astAnalyzer';
 import { LLMService } from './llmService';
+import { AIMentorProvider } from './aiMentorProvider';
+import { ProactiveCodeAnalyzer } from './proactiveCodeAnalyzer';
 import * as diff from 'diff';
 import { ProfileManager } from './profileManager';
 import { interactionTracker } from './interactionTracker';
 
 export class CodeWatcher {
-    private fileWatcher: vscode.FileSystemWatcher | undefined;
-    private isActive = false;
-    private previousContent: Map<string, string> = new Map();
+    private disposables: vscode.Disposable[] = [];
+    private previousContent = new Map<string, string>();
     private debounceTimer: NodeJS.Timeout | undefined;
-    private readonly debounceDelay = 1000; // 1 second
-    private aiMentorProvider: any;
+    private astAnalyzer: ASTAnalyzer;
+    private llmService: LLMService;
+    private aiMentorProvider: AIMentorProvider | undefined;
+    private profileManager: ProfileManager | undefined;
+    private proactiveAnalyzer: ProactiveCodeAnalyzer | undefined;
+    private isActive: boolean = false;
+    private fileWatcher: vscode.FileSystemWatcher | undefined;
+    private debounceDelay: number = 1000;
 
     constructor(
-        private astAnalyzer: ASTAnalyzer,
-        private llmService: LLMService,
-        private profileManager?: ProfileManager
-    ) {}
+        astAnalyzer: ASTAnalyzer,
+        llmService: LLMService,
+        profileManager?: ProfileManager
+    ) {
+        this.astAnalyzer = astAnalyzer;
+        this.llmService = llmService;
+        this.profileManager = profileManager;
+    }
 
     setAIMentorProvider(provider: any) {
         this.aiMentorProvider = provider;
@@ -146,16 +157,20 @@ export class CodeWatcher {
         // Analyze the changes
         const analysis = await this.astAnalyzer.analyzeChanges(previousAST, currentAST);
 
-        // Only provide local analysis for live feedback to avoid rate limiting
-        // Gemini calls are reserved for manual "Analyze Code" button
+        // Get proactive analysis for pattern-based issues
+        const proactiveAnalysis = await this.proactiveAnalyzer?.analyzeCodeProactively(currentContent, document.languageId);
+
+        // Create consolidated analysis combining all three types
         if (this.aiMentorProvider) {
-            this.aiMentorProvider.addLocalAnalysis({
+            this.aiMentorProvider.addConsolidatedAnalysis({
                 fileName: document.fileName,
                 language: document.languageId,
                 diff: changes,
-                analysis: analysis,
+                astAnalysis: analysis,
+                patternAnalysis: proactiveAnalysis,
                 previousContent: previousContent,
-                currentContent: currentContent
+                currentContent: currentContent,
+                timestamp: new Date().toISOString()
             });
         }
 

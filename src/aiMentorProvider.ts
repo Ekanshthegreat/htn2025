@@ -4,10 +4,60 @@ import { LLMService, MentorResponse } from './llmService';
 import { ProfileManager } from './profileManager';
 import { interactionTracker } from './interactionTracker';
 
+export interface ConsolidatedMentorMessage {
+    id: string;
+    mentorId: string;
+    mentorName: string;
+    mentorAvatar: string;
+    timestamp: Date;
+    analysisTypes: ('pattern' | 'ast' | 'ai')[];
+    confidence: number;
+    priority: 'critical' | 'high' | 'medium' | 'low';
+    patternAnalysis?: {
+        issues: Array<{type: string; severity: string; message: string; line?: number}>;
+        suggestions: string[];
+    };
+    astAnalysis?: {
+        complexity: number;
+        issues: any[];
+        metrics: any;
+        changes: any[];
+    };
+    aiAnalysis?: {
+        insights: string[];
+        predictions: string[];
+        suggestions: string[];
+        warnings: string[];
+        codeSnippets?: Array<{language: string; code: string; explanation?: string}>;
+    };
+    content: {
+        message: string;
+        patternAnalysis?: {
+            issues: Array<{type: string; severity: string; message: string; line?: number}>;
+            suggestions: string[];
+        };
+        astAnalysis?: {
+            complexity: number;
+            codeFlow: any[];
+            dataDependencies: any[];
+            issues: Array<{type: string; message: string; confidence: number}>;
+        };
+        aiAnalysis?: {
+            insights: string[];
+            predictions: string[];
+            suggestions: string[];
+            warnings: string[];
+            codeSnippets?: Array<{language: string; code: string; explanation?: string}>;
+        };
+    };
+    actionable: boolean;
+}
+
 export class AIMentorProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'aiMentorPanel';
     private _view?: vscode.WebviewView;
-    private messages: MentorResponse[] = [];
+    private messages: ConsolidatedMentorMessage[] = [];
+    private messageIdCounter = 0;
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -64,60 +114,139 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
             console.error('Invalid response format:', response);
             return;
         }
-        this.messages.push(response);
-        console.log('Added message to AI Mentor:', response.message.substring(0, 100) + '...');
+        
+        // Convert legacy MentorResponse to ConsolidatedMentorMessage
+        const activeProfile = this.profileManager?.getActiveProfile();
+        const consolidatedMessage = this.createConsolidatedMessage(response, activeProfile, ['ai']);
+        
+        this.messages.push(consolidatedMessage);
+        console.log('Added consolidated message:', consolidatedMessage.content.message.substring(0, 100) + '...');
         this.updateWebview();
     }
 
     public addLocalAnalysis(data: any) {
-        const { fileName, language, diff, analysis } = data;
+        const { fileName, language, diff, analysis, currentContent } = data;
+        const activeProfile = this.profileManager?.getActiveProfile();
+        
+        // Create consolidated message with pattern and AST analysis
+        const consolidatedMessage: ConsolidatedMentorMessage = {
+            id: `msg_${++this.messageIdCounter}`,
+            mentorId: activeProfile?.id || 'default',
+            mentorName: activeProfile?.name || 'AI Mentor',
+            mentorAvatar: this.getMentorAvatar(activeProfile),
+            timestamp: new Date(),
+            analysisTypes: ['pattern', 'ast'],
+            content: {
+                message: this.generatePersonalizedMessage(activeProfile, 'code_analysis', fileName),
+                patternAnalysis: this.generatePatternAnalysis(currentContent, language),
+                astAnalysis: analysis ? {
+                    complexity: analysis.complexity || 0,
+                    codeFlow: analysis.functions || [],
+                    dataDependencies: analysis.variables || [],
+                    issues: analysis.potentialIssues?.map((issue: any) => ({
+                        type: issue.type,
+                        message: issue.message,
+                        confidence: 0.8
+                    })) || []
+                } : undefined
+            },
+            confidence: 0.85,
+            priority: this.calculatePriority(currentContent, analysis),
+            actionable: true
+        };
+        
+        this.messages.push(consolidatedMessage);
+        this.updateWebview();
+    }
 
-        // Generate quick local insights without API calls
-        const addedLines = diff.filter((d: any) => d.added).length;
-        const removedLines = diff.filter((d: any) => d.removed).length;
+    public addConsolidatedAnalysis(analysis: {
+        fileName: string;
+        language: string;
+        diff: any[];
+        astAnalysis: any;
+        patternAnalysis: any;
+        previousContent: string;
+        currentContent: string;
+        timestamp: string;
+    }) {
+        const activeProfile = this.profileManager?.getActiveProfile();
+        if (!activeProfile) return;
 
-        let message = `📝 Code updated in ${fileName.split('/').pop()}`;
-        const insights = [];
-        const suggestions = [];
+        const consolidatedMessage: ConsolidatedMentorMessage = {
+            id: `consolidated_${Date.now()}`,
+            mentorId: activeProfile.id,
+            mentorName: activeProfile.name,
+            mentorAvatar: this.getMentorAvatar(activeProfile.id),
+            timestamp: new Date(analysis.timestamp),
+            analysisTypes: [],
+            confidence: 0.7,
+            priority: 'medium',
+            content: {
+                message: this.generatePersonalizedMessage(activeProfile, 'code_analysis', analysis.fileName)
+            },
+            actionable: true
+        };
 
-        if (addedLines > 0) insights.push(`Added ${addedLines} lines`);
-        if (removedLines > 0) insights.push(`Removed ${removedLines} lines`);
+        // Add pattern analysis if available
+        if (analysis.patternAnalysis && analysis.patternAnalysis.issues?.length > 0) {
+            consolidatedMessage.analysisTypes.push('pattern');
+            consolidatedMessage.patternAnalysis = {
+                issues: analysis.patternAnalysis.issues.map((issue: any) => ({
+                    type: issue.type || 'issue',
+                    message: issue.message || issue.description,
+                    severity: issue.severity || 'medium',
+                    line: issue.line || 0
+                })),
+                suggestions: analysis.patternAnalysis.suggestions || []
+            };
+        }
 
-        // Basic pattern detection
-        const content = data.currentContent || '';
-        if (content.includes('console.log')) suggestions.push('Consider removing debug statements before production');
-        if (content.includes('TODO') || content.includes('FIXME')) suggestions.push('Address TODO/FIXME comments');
+        // Add AST analysis if available
+        if (analysis.astAnalysis) {
+            consolidatedMessage.analysisTypes.push('ast');
+            consolidatedMessage.astAnalysis = {
+                complexity: analysis.astAnalysis.complexity || 0,
+                issues: analysis.astAnalysis.issues || [],
+                metrics: analysis.astAnalysis.metrics || {},
+                changes: analysis.astAnalysis.changes || []
+            };
+        }
 
-        this.addMessage({
-            message,
-            type: 'insight',
-            insights,
-            suggestions
-        });
+        // Calculate priority based on analysis results
+        consolidatedMessage.priority = this.calculateConsolidatedPriority(consolidatedMessage);
+        
+        // Calculate confidence based on analysis types
+        consolidatedMessage.confidence = consolidatedMessage.analysisTypes.length > 1 ? 0.9 : 0.7;
+
+        this.messages.push(consolidatedMessage);
+        this.updateWebview();
     }
 
     public updateWebview() {
         if (this._view) {
-            const formattedMessages = this.messages.map(msg => {
-                // Ensure message is a string, not an object
-                let messageText = msg.message;
-                if (typeof messageText === 'object') {
-                    messageText = JSON.stringify(messageText, null, 2);
-                }
-
-                return {
-                    message: messageText || 'No message content',
-                    type: msg.type || 'explanation',
-                    suggestions: msg.suggestions || [],
-                    warnings: msg.warnings || [],
-                    codeSnippets: msg.codeSnippets || [],
-                    confidence: msg.confidence,
-                    learningOpportunity: msg.learningOpportunity,
-                    insights: msg.insights || [],
-                    predictions: msg.predictions || []
-                };
-            });
-            this._view.webview.postMessage({ type: 'updateMessages', messages: formattedMessages });
+            const formattedMessages = this.messages.map(msg => ({
+                id: msg.id,
+                mentorId: msg.mentorId,
+                mentorName: msg.mentorName,
+                mentorAvatar: msg.mentorAvatar,
+                timestamp: msg.timestamp.toISOString(),
+                analysisTypes: msg.analysisTypes,
+                message: msg.content.message,
+                type: 'consolidated',
+                patternAnalysis: msg.content.patternAnalysis,
+                astAnalysis: msg.content.astAnalysis,
+                aiAnalysis: msg.content.aiAnalysis,
+                confidence: msg.confidence,
+                priority: msg.priority,
+                actionable: msg.actionable,
+                // Legacy compatibility
+                suggestions: msg.content.aiAnalysis?.suggestions || msg.content.patternAnalysis?.suggestions || [],
+                warnings: msg.content.aiAnalysis?.warnings || [],
+                insights: msg.content.aiAnalysis?.insights || [],
+                predictions: msg.content.aiAnalysis?.predictions || [],
+                codeSnippets: msg.content.aiAnalysis?.codeSnippets || []
+            }));
+            this._view.webview.postMessage({ type: 'updateConsolidatedMessages', messages: formattedMessages });
         }
     }
 
@@ -484,6 +613,181 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
         return snippets;
     }
 
+    // New methods for consolidated mentor messages
+    private createConsolidatedMessage(response: MentorResponse, activeProfile: any, analysisTypes: ('pattern' | 'ast' | 'ai')[]): ConsolidatedMentorMessage {
+        return {
+            id: `msg_${++this.messageIdCounter}`,
+            mentorId: activeProfile?.id || 'default',
+            mentorName: activeProfile?.name || 'AI Mentor',
+            mentorAvatar: this.getMentorAvatar(activeProfile),
+            timestamp: new Date(),
+            analysisTypes,
+            content: {
+                message: response.message,
+                aiAnalysis: {
+                    insights: response.insights || [],
+                    predictions: response.predictions || [],
+                    suggestions: response.suggestions || [],
+                    warnings: response.warnings || [],
+                    codeSnippets: (response.codeSnippets || []).map(snippet => ({
+                        language: snippet.language,
+                        code: snippet.code,
+                        explanation: snippet.explanation || ''
+                    }))
+                }
+            },
+            confidence: response.confidence || 0.8,
+            priority: this.determinePriorityFromType(response.type),
+            actionable: (response.suggestions && response.suggestions.length > 0) || false
+        };
+    }
+
+    private getMentorAvatar(activeProfile: any): string {
+        if (!activeProfile) return 'https://avatars.githubusercontent.com/u/60302907?v=4';
+        
+        if (activeProfile.githubUsername) {
+            return `https://avatars.githubusercontent.com/${activeProfile.githubUsername}?v=4`;
+        }
+        
+        return activeProfile.avatar || 'https://avatars.githubusercontent.com/u/60302907?v=4';
+    }
+
+    private generatePersonalizedMessage(activeProfile: any, messageType: string, fileName?: string): string {
+        const mentorName = activeProfile?.name || 'AI Mentor';
+        const communicationStyle = activeProfile?.personality?.communicationStyle || 'supportive';
+        
+        const baseMessage = fileName ? 
+            `I've analyzed the changes in ${fileName.split('/').pop()}` :
+            `I've completed my analysis of your code`;
+        
+        switch (communicationStyle) {
+            case 'direct':
+                return `${mentorName}: ${baseMessage}. Here's what I found:`;
+            case 'supportive':
+                return `${mentorName}: Great work! ${baseMessage} and I have some insights to share:`;
+            case 'detailed':
+                return `${mentorName}: I've conducted a comprehensive analysis of your code. ${baseMessage} using multiple analysis techniques. Here are my findings:`;
+            case 'concise':
+                return `${mentorName}: Analysis complete.`;
+            default:
+                return `${mentorName}: ${baseMessage}. Here are my observations:`;
+        }
+    }
+
+    private generatePatternAnalysis(content: string, language: string): { issues: Array<{type: string; severity: string; message: string; line?: number}>; suggestions: string[] } {
+        const issues: Array<{type: string; severity: string; message: string; line?: number}> = [];
+        const suggestions: string[] = [];
+        
+        if (!content) return { issues, suggestions };
+        
+        const lines = content.split('\n');
+        
+        // Pattern-based analysis
+        lines.forEach((line, index) => {
+            const trimmed = line.trim();
+            
+            if (trimmed.includes('console.log')) {
+                issues.push({
+                    type: 'debug_statement',
+                    severity: 'low',
+                    message: 'Debug statement detected',
+                    line: index + 1
+                });
+                suggestions.push('Remove console.log statements before production');
+            }
+            
+            if (trimmed.includes('TODO') || trimmed.includes('FIXME')) {
+                issues.push({
+                    type: 'todo_comment',
+                    severity: 'medium',
+                    message: 'TODO/FIXME comment found',
+                    line: index + 1
+                });
+                suggestions.push('Address TODO/FIXME comments');
+            }
+            
+            if (language === 'javascript' || language === 'typescript') {
+                if (trimmed.includes('var ')) {
+                    issues.push({
+                        type: 'deprecated_syntax',
+                        severity: 'medium',
+                        message: 'Use of var keyword detected',
+                        line: index + 1
+                    });
+                    suggestions.push('Use let or const instead of var');
+                }
+                
+                if (trimmed.includes('==') && !trimmed.includes('===')) {
+                    issues.push({
+                        type: 'loose_equality',
+                        severity: 'high',
+                        message: 'Loose equality comparison detected',
+                        line: index + 1
+                    });
+                    suggestions.push('Use strict equality (===) instead of loose equality (==)');
+                }
+            }
+        });
+
+        return { issues, suggestions };
+    }
+
+    private calculatePriority(currentContent: string, analysis: any): 'critical' | 'high' | 'medium' | 'low' {
+        const hasErrors = analysis?.potentialIssues?.some((issue: any) => issue.severity === 'error');
+        const hasWarnings = analysis?.potentialIssues?.some((issue: any) => issue.severity === 'warning');
+        const complexity = analysis?.complexity || 0;
+        
+        if (hasErrors || complexity > 15) return 'critical';
+        if (hasWarnings || complexity > 10) return 'high';
+        if (complexity > 5) return 'medium';
+        return 'low';
+    }
+
+    private calculateConsolidatedPriority(message: ConsolidatedMentorMessage): 'critical' | 'high' | 'medium' | 'low' {
+        let priorityScore = 0;
+
+        // Check pattern analysis issues
+        if (message.patternAnalysis?.issues) {
+            const criticalIssues = message.patternAnalysis.issues.filter(issue => issue.severity === 'critical' || issue.severity === 'error');
+            const highIssues = message.patternAnalysis.issues.filter(issue => issue.severity === 'high' || issue.severity === 'warning');
+            
+            priorityScore += criticalIssues.length * 10;
+            priorityScore += highIssues.length * 5;
+            priorityScore += message.patternAnalysis.issues.length * 2;
+        }
+
+        // Check AST analysis complexity and issues
+        if (message.astAnalysis) {
+            const complexity = message.astAnalysis.complexity || 0;
+            priorityScore += Math.min(complexity, 20);
+            
+            if (message.astAnalysis.issues) {
+                priorityScore += message.astAnalysis.issues.length * 3;
+            }
+        }
+
+        // Check AI analysis warnings and suggestions
+        if (message.aiAnalysis) {
+            priorityScore += (message.aiAnalysis.warnings?.length || 0) * 4;
+            priorityScore += (message.aiAnalysis.suggestions?.length || 0) * 2;
+        }
+
+        if (priorityScore >= 30) return 'critical';
+        if (priorityScore >= 15) return 'high';
+        if (priorityScore >= 5) return 'medium';
+        return 'low';
+    }
+
+    private determinePriorityFromType(type: string): 'critical' | 'high' | 'medium' | 'low' {
+        switch (type) {
+            case 'warning': return 'high';
+            case 'suggestion': return 'medium';
+            case 'explanation': return 'low';
+            case 'narration': return 'low';
+            default: return 'medium';
+        }
+    }
+
     private _getHtmlForWebview(webview: vscode.Webview) {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.css'));
@@ -519,7 +823,10 @@ export class AIMentorProvider implements vscode.WebviewViewProvider {
                     <div class="header">
                         <div class="mentor-info">
                             <img id="mentorAvatar" class="mentor-avatar-img" src="https://avatars.githubusercontent.com/u/60302907?v=4" alt="Mentor Avatar" />
-                            <h2 id="mentorTitle">AI Mentor</h2>
+                            <div class="mentor-details">
+                                <h2 id="mentorTitle">AI Mentor</h2>
+                                <span id="mentorStatus" class="mentor-status">Ready to help</span>
+                            </div>
                         </div>
                     </div>
                     

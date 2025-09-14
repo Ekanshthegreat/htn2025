@@ -89,7 +89,7 @@
         }
     });
 
-    // Enhanced message handling with proactive analysis support
+    // Enhanced message handling with consolidated mentor messages
     window.addEventListener('message', event => {
         const message = event.data;
         console.log('=== WEBVIEW RECEIVED MESSAGE ===');
@@ -98,9 +98,14 @@
         
         switch (message.type) {
             case 'updateMessages':
-                console.log('Processing updateMessages with', message.messages?.length || 0, 'messages');
+                console.log('Processing legacy updateMessages with', message.messages?.length || 0, 'messages');
                 hideTypingIndicator();
                 displayMessages(message.messages);
+                break;
+            case 'updateConsolidatedMessages':
+                console.log('Processing consolidated messages with', message.messages?.length || 0, 'messages');
+                hideTypingIndicator();
+                displayConsolidatedMessages(message.messages);
                 break;
             case 'statusUpdate':
                 updateStatus(message.status);
@@ -137,7 +142,7 @@
     });
 
     function displayMessages(messages) {
-        console.log('=== displayMessages called ===');
+        console.log('=== displayMessages called (legacy) ===');
         console.log('Messages array:', messages);
         console.log('Messages length:', messages?.length || 0);
         console.log('Messages container exists:', !!messagesContainer);
@@ -166,6 +171,42 @@
                 });
             } else {
                 console.log(`Message ${index} already exists, skipping`);
+            }
+        });
+
+        smoothScrollToBottom();
+        updateStatus(`${currentMentor.name} is ready to help`);
+    }
+
+    function displayConsolidatedMessages(messages) {
+        console.log('=== displayConsolidatedMessages called ===');
+        console.log('Consolidated messages array:', messages);
+        
+        if (!messages || messages.length === 0) {
+            console.log('No consolidated messages to display');
+            return;
+        }
+
+        const welcomeMsg = messagesContainer.querySelector('.welcome-message');
+        if (welcomeMsg && messages.length > 0) {
+            console.log('Hiding welcome message for consolidated view');
+            welcomeMsg.style.opacity = '0';
+            setTimeout(() => welcomeMsg?.remove(), 300);
+        }
+
+        messages.forEach((msg, index) => {
+            console.log(`Processing consolidated message ${index}:`, msg);
+            if (!document.querySelector(`[data-consolidated-id="${msg.id}"]`)) {
+                console.log(`Adding new consolidated message ${msg.id}`);
+                addConsolidatedMessage(msg);
+                conversationContext.push({
+                    type: 'consolidated',
+                    message: msg.message,
+                    mentorName: msg.mentorName,
+                    timestamp: Date.now()
+                });
+            } else {
+                console.log(`Consolidated message ${msg.id} already exists, skipping`);
             }
         });
 
@@ -237,6 +278,181 @@
         }, 100);
 
         addMentorPersonalityEffects(messageDiv, response.type);
+    }
+
+    function addConsolidatedMessage(msg) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message consolidated priority-${msg.priority}`;
+        messageDiv.setAttribute('data-consolidated-id', msg.id);
+        messageDiv.style.opacity = '0';
+        messageDiv.style.transform = 'translateY(20px)';
+
+        const timestamp = new Date(msg.timestamp).toLocaleTimeString();
+        const analysisTypeIcons = {
+            'pattern': '🔍',
+            'ast': '🌳', 
+            'ai': '🤖'
+        };
+        
+        const analysisTypesHtml = msg.analysisTypes.map(type => 
+            `<span class="analysis-type ${type}" title="${type.toUpperCase()} Analysis">${analysisTypeIcons[type]}</span>`
+        ).join('');
+
+        let html = `
+            <div class="consolidated-message-header">
+                <div class="mentor-info-inline">
+                    <img class="mentor-avatar-small" src="${msg.mentorAvatar}" alt="${msg.mentorName}" onerror="this.src='https://avatars.githubusercontent.com/u/60302907?v=4'" />
+                    <div class="mentor-details-inline">
+                        <span class="mentor-name">${msg.mentorName}</span>
+                        <div class="analysis-types">${analysisTypesHtml}</div>
+                    </div>
+                </div>
+                <div class="message-meta">
+                    <span class="confidence-badge confidence-${msg.confidence >= 0.9 ? 'high' : msg.confidence >= 0.7 ? 'medium' : 'low'}">
+                        ${Math.round(msg.confidence * 100)}%
+                    </span>
+                    <span class="timestamp">${timestamp}</span>
+                    <button class="message-actions" onclick="toggleConsolidatedActions('${msg.id}')">⋯</button>
+                </div>
+            </div>
+            <div class="consolidated-message-content">
+                <div class="main-message">${formatMessageContent(msg.message)}</div>
+        `;
+
+        // Pattern Analysis Section
+        if (msg.patternAnalysis && (msg.patternAnalysis.issues.length > 0 || msg.patternAnalysis.suggestions.length > 0)) {
+            html += `<div class="analysis-section pattern-analysis">
+                <h4><span class="analysis-icon">🔍</span> Pattern Analysis</h4>`;
+            
+            if (msg.patternAnalysis.issues.length > 0) {
+                html += '<div class="issues-list">';
+                msg.patternAnalysis.issues.forEach((issue, idx) => {
+                    html += `<div class="issue-item severity-${issue.severity}">
+                        <span class="issue-type">${issue.type}</span>
+                        <span class="issue-message">${escapeHtml(issue.message)}</span>
+                        ${issue.line ? `<span class="issue-line">Line ${issue.line}</span>` : ''}
+                    </div>`;
+                });
+                html += '</div>';
+            }
+            
+            if (msg.patternAnalysis.suggestions.length > 0) {
+                html += '<div class="pattern-suggestions">';
+                msg.patternAnalysis.suggestions.forEach((suggestion, idx) => {
+                    html += `<div class="suggestion-item pattern" onclick="applySuggestion('${escapeHtml(suggestion)}', ${idx})">
+                        <span class="suggestion-text">${escapeHtml(suggestion)}</span>
+                        <span class="suggestion-apply">Apply</span>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+            
+            html += '</div>';
+        }
+
+        // AST Analysis Section
+        if (msg.astAnalysis) {
+            html += `<div class="analysis-section ast-analysis">
+                <h4><span class="analysis-icon">🌳</span> AST Analysis</h4>
+                <div class="ast-metrics">
+                    <div class="metric">
+                        <span class="metric-label">Complexity:</span>
+                        <span class="metric-value complexity-${msg.astAnalysis.complexity < 5 ? 'low' : msg.astAnalysis.complexity < 10 ? 'medium' : 'high'}">${msg.astAnalysis.complexity}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Functions:</span>
+                        <span class="metric-value">${msg.astAnalysis.codeFlow.length}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Variables:</span>
+                        <span class="metric-value">${msg.astAnalysis.dataDependencies.length}</span>
+                    </div>
+                </div>`;
+            
+            if (msg.astAnalysis.issues.length > 0) {
+                html += '<div class="ast-issues">';
+                msg.astAnalysis.issues.forEach((issue, idx) => {
+                    html += `<div class="ast-issue-item">
+                        <span class="issue-type">${issue.type}</span>
+                        <span class="issue-message">${escapeHtml(issue.message)}</span>
+                        <span class="issue-confidence">${Math.round(issue.confidence * 100)}%</span>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+            
+            html += '</div>';
+        }
+
+        // AI Analysis Section
+        if (msg.aiAnalysis && (msg.aiAnalysis.insights.length > 0 || msg.aiAnalysis.suggestions.length > 0 || msg.aiAnalysis.warnings.length > 0)) {
+            html += `<div class="analysis-section ai-analysis">
+                <h4><span class="analysis-icon">🤖</span> AI Analysis</h4>`;
+            
+            if (msg.aiAnalysis.insights.length > 0) {
+                html += '<div class="ai-insights"><h5>💡 Insights:</h5><ul>';
+                msg.aiAnalysis.insights.forEach(insight => {
+                    html += `<li class="insight-item">${escapeHtml(insight)}</li>`;
+                });
+                html += '</ul></div>';
+            }
+            
+            if (msg.aiAnalysis.suggestions.length > 0) {
+                html += '<div class="ai-suggestions"><h5>🔧 AI Suggestions:</h5>';
+                msg.aiAnalysis.suggestions.forEach((suggestion, idx) => {
+                    html += `<div class="suggestion-item ai" onclick="applySuggestion('${escapeHtml(suggestion)}', ${idx})">
+                        <span class="suggestion-text">${escapeHtml(suggestion)}</span>
+                        <span class="suggestion-apply">Apply</span>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+            
+            if (msg.aiAnalysis.warnings.length > 0) {
+                html += '<div class="ai-warnings"><h5>⚠️ Warnings:</h5>';
+                msg.aiAnalysis.warnings.forEach((warning, idx) => {
+                    html += `<div class="warning-item ai">
+                        <span class="warning-text">${escapeHtml(warning)}</span>
+                        <button class="warning-dismiss" onclick="dismissConsolidatedWarning('${msg.id}', ${idx})">Dismiss</button>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+            
+            if (msg.aiAnalysis.codeSnippets && msg.aiAnalysis.codeSnippets.length > 0) {
+                html += '<div class="code-snippets"><h5>📝 Code Examples:</h5>';
+                msg.aiAnalysis.codeSnippets.forEach((snippet, idx) => {
+                    html += `<div class="code-snippet">
+                        <div class="snippet-header">
+                            <span class="snippet-language">${snippet.language}</span>
+                            ${snippet.explanation ? `<span class="snippet-explanation">${escapeHtml(snippet.explanation)}</span>` : ''}
+                        </div>
+                        <pre class="snippet-code"><code class="language-${snippet.language}">${escapeHtml(snippet.code)}</code></pre>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+            
+            html += '</div>';
+        }
+
+        html += '</div>'; // Close consolidated-message-content
+
+        messageDiv.innerHTML = html;
+        messagesContainer.appendChild(messageDiv);
+
+        setTimeout(() => {
+            messageDiv.style.opacity = '1';
+            messageDiv.style.transform = 'translateY(0)';
+        }, 100);
+
+        // Apply mentor personality styling
+        if (msg.mentorId && availableProfiles.length > 0) {
+            const profile = availableProfiles.find(p => p.id === msg.mentorId);
+            if (profile && profile.personality) {
+                messageDiv.classList.add(`mentor-style-${profile.personality.communicationStyle}`);
+            }
+        }
     }
 
     function addProactiveAnalysisSection(analysis) {
@@ -640,9 +856,9 @@
         if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
     };
 
-    window.applySuggestion = function(suggestion, idx) {
-        vscode.postMessage({ type: 'applySuggestion', suggestion: suggestion, index: idx });
-        updateStatus('Applying suggestion...');
+    window.toggleConsolidatedActions = function(id) {
+        const menu = document.getElementById(`consolidated-actions-${id}`);
+        if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
     };
 
     window.dismissWarning = function(messageId, warningIdx) {
